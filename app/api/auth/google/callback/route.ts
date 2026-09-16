@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import crypto from 'crypto';
-import { findUserByEmail, createUser, toSafeUser } from '@/lib/db';
+import { upsertOAuthAuthUser } from '@/lib/auth-users';
 import { signToken } from '@/lib/auth';
 
 /**
@@ -62,24 +61,18 @@ export async function GET(request: Request) {
       return NextResponse.redirect(`${origin}/?auth_error=無法取得 Google 電子郵件`);
     }
 
-    // 3. 檢查或註冊使用者
-    let user = findUserByEmail(email);
-    if (!user) {
-      // 隨機產生安全密碼
-      const randomPass = crypto.randomBytes(16).toString('hex');
-      const safe = createUser(email, randomPass, name);
-      user = findUserByEmail(email);
-    }
-
-    if (!user) {
-      return NextResponse.redirect(`${origin}/?auth_error=會員建立失敗`);
-    }
+    // 3. 透過安全存取層取得或建立第三方會員 (記憶體 + Supabase，0 磁碟寫入)
+    const safeUser = await upsertOAuthAuthUser({
+      email,
+      name,
+      provider: 'google',
+    });
 
     // 4. 簽發系統 JWT
     const token = signToken({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
+      userId: safeUser.id,
+      email: safeUser.email,
+      role: safeUser.role,
     });
 
     // 5. 輸出中轉 HTML，將 Token 寫入 localStorage 並轉回首頁

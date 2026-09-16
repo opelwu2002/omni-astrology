@@ -11,7 +11,13 @@ export async function GET(request: Request) {
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
 
-  if (clientId) {
+  const isValidClientId =
+    Boolean(clientId) &&
+    !clientId?.includes('missing_') &&
+    !clientId?.includes('your-google') &&
+    (clientId?.length || 0) > 10;
+
+  if (isValidClientId) {
     const scope = encodeURIComponent('openid email profile');
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(
       redirectUri

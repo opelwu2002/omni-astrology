@@ -32,6 +32,15 @@
       "level2",
       "level3"
     ],
-    "lastLoginAt": 1789526523439
+    "lastLoginAt": 1789534958686
+  },
+  {
+    "id": "user-1789534817649-jdbso",
+    "email": "google.user@vip-omni.com",
+    "passwordHash": "$2b$10$J7.3m3Mko6zHYCTXVzlaf.i8KmkpuqJ84rtJaCdBDF/6gRfXtrlKK",
+    "name": "Google命主體驗用戶",
+    "role": "user",
+    "status": "active",
+    "createdAt": 1789534817649
   }
 ]

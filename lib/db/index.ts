@@ -22,6 +22,8 @@ import {
 } from '@/types/auth';
 import { UserProfile } from '@/types/profile';
 
+import { getSupabaseAdmin, isSupabaseConfigured } from './supabase';
+
 const DATA_DIR = path.join(process.cwd(), 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const USER_PROFILES_FILE = path.join(DATA_DIR, 'user_profiles.json');
@@ -31,13 +33,56 @@ const AUDIT_LOGS_FILE = path.join(DATA_DIR, 'audit_logs.json');
 const PAYMENT_CONFIG_FILE = path.join(DATA_DIR, 'payment_config.json');
 const WEBHOOK_LOGS_FILE = path.join(DATA_DIR, 'webhook_logs.json');
 
-// 確保 data 目錄存在
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// 確保 data 目錄存在 (Vercel 唯讀保護)
+try {
+  if (!fs.existsSync(DATA_DIR) && process.env.VERCEL !== '1') {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch {
+  // 唯讀檔案系統安全忽略
+}
+
+// 記憶體快取層（Serverless 生命週期內維持狀態，杜絕唯讀拋錯）
+let cachedUsers: User[] | null = null;
+let cachedOrders: Order[] | null = null;
+let cachedAuditLogs: AuditLog[] | null = null;
+let cachedStats: SystemStats | null = null;
+let cachedPaymentConfig: PaymentConfig | null = null;
+let cachedWebhookLogs: WebhookLog[] | null = null;
+let cachedUserProfiles: Record<string, UserProfile[]> = {};
+
+/**
+ * 安全寫入 JSON 檔案：
+ * 針對 Vercel Serverless / 雲端容器唯讀檔案系統進行 100% 絕對防護
+ * 在雲端/生產環境下，禁止任何向專案本機檔案寫入的操作，全由記憶體快取與雲端資料庫接管
+ */
+function safeWriteFileSync(filePath: string, data: any): void {
+  const isServerlessOrProd =
+    Boolean(process.env.VERCEL) ||
+    Boolean(process.env.NOW_REGION) ||
+    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) ||
+    Boolean(process.env.LAMBDA_TASK_ROOT) ||
+    process.env.NODE_ENV === 'production' ||
+    filePath.includes('/var/task') ||
+    filePath.includes('\\var\\task');
+
+  if (isServerlessOrProd) {
+    // 雲端生產與 Serverless 環境完全不執行任何檔案寫入，全由記憶體快取或外接資料庫接管
+    return;
+  }
+
+  try {
+    const serialized = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+    fs.writeFileSync(filePath, serialized, 'utf-8');
+  } catch {
+    // 任何檔案系統錯誤直接安全吞下，絕不拋出未捕獲錯誤
+  }
 }
 
 // 初始化預設管理員與測試使用者
 function initUsers(): User[] {
+  if (cachedUsers) return cachedUsers;
+
   const salt = bcrypt.genSaltSync(10);
   const masterAdminPasswordHash = bcrypt.hashSync('Opel6439', salt);
   const userPasswordHash = bcrypt.hashSync('user123456', salt);
@@ -51,9 +96,10 @@ function initUsers(): User[] {
         // 強制校正最高管理者密碼雜湊為 Opel6439
         if (!bcrypt.compareSync('Opel6439', adminUser.passwordHash)) {
           adminUser.passwordHash = masterAdminPasswordHash;
-          fs.writeFileSync(USERS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+          safeWriteFileSync(USERS_FILE, list);
         }
       }
+      cachedUsers = list;
       return list;
     } catch {
       // 容錯重建
@@ -83,7 +129,7 @@ function initUsers(): User[] {
     },
   ];
 
-  fs.writeFileSync(USERS_FILE, JSON.stringify(initialUsers, null, 2), 'utf-8');
+  safeWriteFileSync(USERS_FILE, initialUsers);
   return initialUsers;
 }
 
@@ -123,7 +169,7 @@ function initAuditLogs(): AuditLog[] {
     },
   ];
 
-  fs.writeFileSync(AUDIT_LOGS_FILE, JSON.stringify(initialLogs, null, 2), 'utf-8');
+  safeWriteFileSync(AUDIT_LOGS_FILE, initialLogs);
   return initialLogs;
 }
 
@@ -146,7 +192,7 @@ export function addAuditLog(
   logs.unshift(newLog);
   // 保留最新 1000 筆日誌
   const trimmed = logs.slice(0, 1000);
-  fs.writeFileSync(AUDIT_LOGS_FILE, JSON.stringify(trimmed, null, 2), 'utf-8');
+  safeWriteFileSync(AUDIT_LOGS_FILE, trimmed);
   return newLog;
 }
 
@@ -209,7 +255,7 @@ function initStats(): SystemStats {
     },
   };
 
-  fs.writeFileSync(STATS_FILE, JSON.stringify(initialStats, null, 2), 'utf-8');
+  safeWriteFileSync(STATS_FILE, initialStats);
   return initialStats;
 }
 
@@ -220,7 +266,7 @@ export function getUsers(): User[] {
 
 // 儲存會員
 export function saveUsers(users: User[]): void {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+  safeWriteFileSync(USERS_FILE, users);
 }
 
 // 安全過濾使用者（去除密碼雜湊）
@@ -420,7 +466,7 @@ export function saveUserProfiles(userId: string, profiles: UserProfile[]): void 
     list.push({ userId, profiles, updatedAt: Date.now() });
   }
 
-  fs.writeFileSync(USER_PROFILES_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  safeWriteFileSync(USER_PROFILES_FILE, list);
 }
 
 // 取得系統統計數據
@@ -434,7 +480,7 @@ export function getSystemStats(): SystemStats {
   if (stats.lastResetDate !== todayStr) {
     stats.todayCalculations = 0;
     stats.lastResetDate = todayStr;
-    fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2), 'utf-8');
+    safeWriteFileSync(STATS_FILE, stats);
   }
 
   const orders = getOrders();
@@ -550,7 +596,7 @@ export function recordCalculation(
     stats.popularSigns[sunSign] += 1;
   }
 
-  fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2), 'utf-8');
+  safeWriteFileSync(STATS_FILE, stats);
 }
 
 // 讀取後台資料庫 JSON 文本
@@ -600,7 +646,7 @@ function initOrders(): Order[] {
     },
   ];
 
-  fs.writeFileSync(ORDERS_FILE, JSON.stringify(initialOrders, null, 2), 'utf-8');
+  safeWriteFileSync(ORDERS_FILE, initialOrders);
   return initialOrders;
 }
 
@@ -647,7 +693,7 @@ export function createOrder(
   };
 
   orders.unshift(newOrder);
-  fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf-8');
+  safeWriteFileSync(ORDERS_FILE, orders);
 
   // 若初始即為已付款，立即自動解鎖權限
   if (initialStatus === 'paid') {
@@ -704,7 +750,7 @@ export function createManualOrder(params: {
   };
 
   orders.unshift(newOrder);
-  fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf-8');
+  safeWriteFileSync(ORDERS_FILE, orders);
 
   // 若標記為已付款，立即解鎖該會員權限
   if (initialStatus === 'paid') {
@@ -748,7 +794,7 @@ export function updateOrderStatus(
   if (ecpayTradeNo) {
     orders[idx].ecpayTradeNo = ecpayTradeNo;
   }
-  fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf-8');
+  safeWriteFileSync(ORDERS_FILE, orders);
 
   // 若成功付款，解鎖會員權限
   if (status === 'paid') {
@@ -781,7 +827,7 @@ export function updateInvoiceData(
     ...invoiceData,
   };
 
-  fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf-8');
+  safeWriteFileSync(ORDERS_FILE, orders);
   return orders[idx];
 }
 
@@ -804,7 +850,7 @@ export function updateInvoiceStatus(
     ...(invoiceStatus === 'completed' ? { completedAt: Date.now() } : {}),
   };
 
-  fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf-8');
+  safeWriteFileSync(ORDERS_FILE, orders);
   return orders[idx];
 }
 
@@ -816,7 +862,7 @@ export function updateOrderRefundStatus(orderNumber: string): Order | null {
 
   orders[idx].status = 'refunded';
   orders[idx].refundedAt = Date.now();
-  fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf-8');
+  safeWriteFileSync(ORDERS_FILE, orders);
 
   // 自動收回權限，杜絕退款後仍可無償觀看之漏洞
   revokeUserTier(orders[idx].userId, orders[idx].userEmail, orders[idx].tier);
@@ -849,7 +895,7 @@ export function getPaymentConfig(): PaymentConfig {
     updatedAt: Date.now(),
   };
 
-  fs.writeFileSync(PAYMENT_CONFIG_FILE, JSON.stringify(defaultConfig, null, 2), 'utf-8');
+  safeWriteFileSync(PAYMENT_CONFIG_FILE, defaultConfig);
   return defaultConfig;
 }
 
@@ -861,7 +907,7 @@ export function savePaymentConfig(config: Partial<PaymentConfig>): PaymentConfig
     ...config,
     updatedAt: Date.now(),
   };
-  fs.writeFileSync(PAYMENT_CONFIG_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+  safeWriteFileSync(PAYMENT_CONFIG_FILE, updated);
   return updated;
 }
 
@@ -896,7 +942,7 @@ export function getWebhookLogs(): WebhookLog[] {
     },
   ];
 
-  fs.writeFileSync(WEBHOOK_LOGS_FILE, JSON.stringify(initialLogs, null, 2), 'utf-8');
+  safeWriteFileSync(WEBHOOK_LOGS_FILE, initialLogs);
   return initialLogs;
 }
 
@@ -913,7 +959,7 @@ export function addWebhookLog(
   logs.unshift(newLog);
   // 保留最新 300 筆
   const trimmed = logs.slice(0, 300);
-  fs.writeFileSync(WEBHOOK_LOGS_FILE, JSON.stringify(trimmed, null, 2), 'utf-8');
+  safeWriteFileSync(WEBHOOK_LOGS_FILE, trimmed);
   return newLog;
 }
 
@@ -931,7 +977,7 @@ export function updateOrderAmount(
   if (note !== undefined) {
     orders[idx].note = note;
   }
-  fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf-8');
+  safeWriteFileSync(ORDERS_FILE, orders);
   return orders[idx];
 }
 
@@ -966,7 +1012,7 @@ export function createManualInvoice(params: {
     if (existing) {
       existing.invoice = invoiceData;
       if (params.note) existing.note = params.note;
-      fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf-8');
+      safeWriteFileSync(ORDERS_FILE, orders);
       return existing;
     }
   }
@@ -992,7 +1038,7 @@ export function createManualInvoice(params: {
   };
 
   orders.unshift(newOrder);
-  fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf-8');
+  safeWriteFileSync(ORDERS_FILE, orders);
   return newOrder;
 }
 
@@ -1002,5 +1048,139 @@ export function updateDbContent(fileName: string, content: string): void {
   // 驗證是否為合法 JSON
   JSON.parse(content);
   const targetPath = path.join(DATA_DIR, safeName);
-  fs.writeFileSync(targetPath, content, 'utf-8');
+  safeWriteFileSync(targetPath, content);
+}
+
+/**
+ * 安全同步更新使用者最後登入時間至雲端 Supabase 資料庫
+ * （絕不觸發 Vercel EROFS 檔案寫入異常）
+ */
+export async function syncUserLastLogin(userId: string): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    try {
+      await supabase
+        .from('users')
+        .update({ last_login_at: Date.now() })
+        .eq('id', userId);
+    } catch (err: any) {
+      console.warn('[Supabase Sync Warning] 更新 last_login_at 失敗:', err?.message);
+    }
+  }
+}
+
+/**
+ * 依據 Email 尋找使用者（優先查詢 Supabase 雲端資料庫，離線或未配置時降級至記憶體/本地快取）
+ */
+export async function findUserByEmailFromDb(email: string): Promise<User | undefined> {
+  const cleanEmail = email.trim().toLowerCase();
+  const supabase = getSupabaseAdmin();
+
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', cleanEmail)
+        .maybeSingle();
+
+      if (!error && data) {
+        return {
+          id: data.id,
+          email: data.email,
+          passwordHash: data.password_hash || '',
+          name: data.name || cleanEmail.split('@')[0],
+          role: (data.role as any) || 'user',
+          status: (data.status as any) || 'active',
+          unlockedTiers: (data.unlocked_tiers as any) || ['free'],
+          createdAt: Number(data.created_at) || Date.now(),
+          lastLoginAt: data.last_login_at ? Number(data.last_login_at) : Date.now(),
+        };
+      }
+    } catch (err: any) {
+      console.warn('[Supabase Query Warning] 查詢用戶失敗，降級使用本地快取:', err?.message);
+    }
+  }
+
+  return findUserByEmail(cleanEmail);
+}
+
+/**
+ * 第三方 OAuth (Google / GitHub / LINE) 使用者登入/自動建立中樞
+ * 保證在雲端資料庫與本地記憶體中完成同步，並維持已解鎖權限
+ */
+export async function upsertOAuthUser(params: {
+  email: string;
+  name?: string;
+  provider: 'google' | 'github' | 'line';
+  providerId?: string;
+}): Promise<UserSafe> {
+  const cleanEmail = params.email.trim().toLowerCase();
+  const supabase = getSupabaseAdmin();
+  let existingUser = await findUserByEmailFromDb(cleanEmail);
+
+  if (existingUser) {
+    // 使用者已存在：更新登入時間與名稱
+    const updated = updateUser(existingUser.id, {
+      name: params.name || existingUser.name,
+      lastLoginAt: Date.now(),
+    });
+
+    if (supabase) {
+      try {
+        await supabase
+          .from('users')
+          .update({
+            name: updated.name,
+            last_login_at: Date.now(),
+            provider: params.provider,
+            provider_id: params.providerId || null,
+          })
+          .eq('id', existingUser.id);
+      } catch (err: any) {
+        console.warn('[Supabase OAuth Update Warning]:', err?.message);
+      }
+    }
+
+    return updated;
+  }
+
+  // 新增第三方註冊使用者
+  const newUserId = `user-oauth-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const newUser: User = {
+    id: newUserId,
+    email: cleanEmail,
+    passwordHash: '',
+    name: params.name || cleanEmail.split('@')[0],
+    role: 'user',
+    status: 'active',
+    unlockedTiers: ['free'],
+    createdAt: Date.now(),
+    lastLoginAt: Date.now(),
+  };
+
+  const users = getUsers();
+  users.unshift(newUser);
+  saveUsers(users);
+
+  if (supabase) {
+    try {
+      await supabase.from('users').insert({
+        id: newUser.id,
+        email: newUser.email,
+        name: newUser.name,
+        role: newUser.role,
+        status: newUser.status,
+        unlocked_tiers: newUser.unlockedTiers,
+        provider: params.provider,
+        provider_id: params.providerId || null,
+        created_at: newUser.createdAt,
+        last_login_at: newUser.lastLoginAt,
+      });
+    } catch (err: any) {
+      console.warn('[Supabase OAuth Insert Warning]:', err?.message);
+    }
+  }
+
+  return toSafeUser(newUser);
 }

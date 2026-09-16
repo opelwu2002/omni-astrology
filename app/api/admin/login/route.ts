@@ -1,5 +1,4 @@
-import { NextResponse } from 'next/server';
-import { findUserByEmail, updateUser, toSafeUser } from '@/lib/db';
+import { verifyUserCredentials } from '@/lib/auth-users';
 import { signToken, createPrivateJsonResponse } from '@/lib/auth';
 
 /**
@@ -25,30 +24,21 @@ export async function POST(request: Request) {
         account.toLowerCase() === 'admin@omni-astrology.com') &&
       password === 'Opel6439'
     ) {
-      let adminUser = findUserByEmail('admin@omni-astrology.com');
-      if (!adminUser) {
-        adminUser = {
-          id: 'admin-master-001',
-          email: 'admin@omni-astrology.com',
-          name: '系統最高管理員',
-          role: 'admin',
-          status: 'active',
-          passwordHash: '',
-          createdAt: Date.now(),
-          lastLoginAt: Date.now(),
-        };
-      } else {
-        updateUser(adminUser.id, {
-          lastLoginAt: Date.now(),
-          role: 'admin',
-          status: 'active',
-        });
-      }
+      const verifyResult = await verifyUserCredentials('admin@omni-astrology.com', 'Opel6439');
+      const safeUser = verifyResult.user || {
+        id: 'admin-master-001',
+        email: 'admin@omni-astrology.com',
+        name: '系統最高管理員',
+        role: 'admin',
+        status: 'active',
+        unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],
+        createdAt: 1786868793061,
+        lastLoginAt: Date.now(),
+      };
 
-      const safeUser = toSafeUser(adminUser);
       const token = signToken({
-        userId: adminUser.id,
-        email: adminUser.email,
+        userId: safeUser.id,
+        email: safeUser.email,
         role: 'admin',
       });
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createUser } from '@/lib/db';
+import { createAuthUser } from '@/lib/auth-users';
 import { signToken } from '@/lib/auth';
 
 export async function POST(request: Request) {
@@ -20,7 +20,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const user = createUser(email.trim(), password, name?.trim());
+    // 透過安全認證層建立新會員（記憶體與 Supabase 雙向同步，0 本機寫入防範 EROFS）
+    const user = await createAuthUser({
+      email: email.trim(),
+      password,
+      name: name?.trim(),
+    });
+
     const token = signToken({
       userId: user.id,
       email: user.email,
