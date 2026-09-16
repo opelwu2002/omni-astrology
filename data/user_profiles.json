@@ -1,0 +1,22 @@
+[
+  {
+    "userId": "admin-master-001",
+    "profiles": [
+      {
+        "id": "cloud-p1",
+        "name": "雲端同步測試命盤",
+        "gender": "female",
+        "birthDate": "1998-05-12",
+        "birthTime": "09:40",
+        "location": {
+          "name": "台北市",
+          "longitude": 121.5654,
+          "latitude": 25.033,
+          "timezone": "Asia/Taipei"
+        },
+        "createdAt": 1789460793195
+      }
+    ],
+    "updatedAt": 1789460793195
+  }
+]

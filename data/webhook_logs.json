@@ -1,0 +1,18 @@
+[
+  {
+    "id": "webhook-init-001",
+    "merchantTradeNo": "ORD202609108831",
+    "tradeNo": "2609101234567890",
+    "rtnCode": "1",
+    "rtnMsg": "交易成功",
+    "tradeAmt": 699,
+    "paymentDate": "2026/09/10 14:20:15",
+    "timestamp": 1789097344654,
+    "rawParams": {
+      "MerchantID": "3456197",
+      "MerchantTradeNo": "ORD202609108831",
+      "RtnCode": "1",
+      "RtnMsg": "交易成功"
+    }
+  }
+]

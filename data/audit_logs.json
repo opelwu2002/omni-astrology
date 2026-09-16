@@ -1,0 +1,24 @@
+[
+  {
+    "id": "audit-init-001",
+    "adminId": "admin-master-001",
+    "adminEmail": "admin@omni-astrology.com",
+    "action": "order_status_change",
+    "targetId": "ORD-20260910-8831",
+    "targetType": "order",
+    "details": "系統啟動：初次對帳同步訂單狀態為已付款",
+    "ip": "127.0.0.1",
+    "timestamp": 1789183744797
+  },
+  {
+    "id": "audit-init-002",
+    "adminId": "admin-master-001",
+    "adminEmail": "admin@omni-astrology.com",
+    "action": "invoice_status_change",
+    "targetId": "ORD-20260910-8831",
+    "targetType": "invoice",
+    "details": "紙本發票狀態推進：已開立 ➔ 已寄出（掛號單號 928374615243）",
+    "ip": "127.0.0.1",
+    "timestamp": 1789356544797
+  }
+]

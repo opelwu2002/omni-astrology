@@ -1,0 +1,37 @@
+[
+  {
+    "id": "admin-master-001",
+    "email": "admin@omni-astrology.com",
+    "passwordHash": "$2b$10$gI5VlqXhNdNALVp1.OSHI.aFNnz/waxl3/XkWhupz7n8WXsty1zGy",
+    "name": "系統最高管理員",
+    "role": "admin",
+    "status": "active",
+    "createdAt": 1786868793061,
+    "lastLoginAt": 1789529341654
+  },
+  {
+    "id": "user-sample-002",
+    "email": "vip@omni-astrology.com",
+    "passwordHash": "$2b$10$YnZpvphI6UcShjCcAVTRMugrMLAKXSlRxysu9S3z7qb1QHqY0h.K.",
+    "name": "陳雅婷 VIP",
+    "role": "user",
+    "status": "active",
+    "createdAt": 1788855993061,
+    "lastLoginAt": 1789457193061
+  },
+  {
+    "id": "user-1789518932653-wba48",
+    "email": "opelwu2002@gmail.com",
+    "passwordHash": "$2b$10$DfBfP/p6oDTS/fi2AVbgLOPNtxDWJIo9rogtPSFp32IpOIvw/DmXq",
+    "name": "吳俊彥",
+    "role": "user",
+    "status": "active",
+    "createdAt": 1789518932653,
+    "unlockedTiers": [
+      "free",
+      "level2",
+      "level3"
+    ],
+    "lastLoginAt": 1789526523439
+  }
+]

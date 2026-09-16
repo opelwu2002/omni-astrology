@@ -1,0 +1,24 @@
+{
+  "totalCalculations": 3824,
+  "todayCalculations": 0,
+  "lastResetDate": "2026-09-16",
+  "matchTypeStats": {
+    "loveMarriage": 2140,
+    "careerPartner": 1210,
+    "familyFriend": 474
+  },
+  "popularSigns": {
+    "天蠍座": 482,
+    "雙魚座": 421,
+    "巨蟹座": 390,
+    "獅子座": 380,
+    "金牛座": 350,
+    "處女座": 330,
+    "天秤座": 320,
+    "摩羯座": 310,
+    "射手座": 290,
+    "雙子座": 280,
+    "牡羊座": 271,
+    "水瓶座": 200
+  }
+}
