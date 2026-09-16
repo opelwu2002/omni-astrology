@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'Omni-Astrology 四合一全方位中西命理平台',
   description: '整合西洋占星、紫微斗數、八字命理與生命靈數的現代化全方位命理運算平台',
+  verification: {
+    google: '67Yo8sRC_Tt0cHB4KjdM29KeyGpIaI4nkJeXGB3zhPU',
+  },
 };
 
 export default function RootLayout({
