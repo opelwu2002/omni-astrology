@@ -399,13 +399,13 @@ export default function AdminPage() {
 
     // 【第一優先強制硬編碼放行，不依賴外部資料庫或複雜雜湊】
     if (
-      (enteredUser === 'admin' || enteredUser === 'admin@omni-astrology.com') &&
+      (enteredUser === 'admin' || enteredUser === 'opelwu2002@gmail.com') &&
       enteredPass === 'Opel6439'
     ) {
       const masterAdminUser: UserSafe = {
         id: 'admin-master-001',
-        email: 'admin@omni-astrology.com',
-        name: '系統最高管理員',
+        email: 'opelwu2002@gmail.com',
+        name: '吳俊彥',
         role: 'admin',
         status: 'active',
         unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],
@@ -653,20 +653,36 @@ export default function AdminPage() {
       return;
     }
     try {
-      const res = await fetch(`/api/admin/users?id=${targetUser.id}`, {
+      // 樂觀更新：立刻自畫面上移除該會員，避免視覺殘留
+      setUsersList((prev: UserSafe[]) =>
+        prev.filter(
+          (u: UserSafe) =>
+            u.id !== targetUser.id &&
+            u.email.toLowerCase() !== targetUser.email.toLowerCase()
+        )
+      );
+
+      const res = await fetch(`/api/admin/users?id=${encodeURIComponent(targetUser.id)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (data.success) {
         showFeedback('success', '會員已成功刪除');
-        fetchUsers();
+        if (Array.isArray(data.users)) {
+          setUsersList(data.users);
+        } else {
+          fetchUsers();
+        }
         fetchStats();
         fetchAuditLogs();
       } else {
+        // 失敗時重新拉取名單復原
+        fetchUsers();
         showFeedback('error', data.error || '刪除失敗');
       }
     } catch {
+      fetchUsers();
       showFeedback('error', '網路異常');
     }
   };
@@ -839,6 +855,33 @@ export default function AdminPage() {
     }
   };
 
+  // 訂單操作：刪除訂單 / 退款作廢
+  const handleDeleteOrder = async (order: Order) => {
+    if (!token) return;
+    const confirmMsg = `⚠️ 警告：確定要永久刪除訂單「${order.orderNumber}」嗎？\n\n【關鍵連動】：\n此動作不可逆！若該訂單狀態為「已付款」，系統將連動收回會員「${order.userEmail}」之報告觀看權限！\n\n確定執行刪單作廢嗎？`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      const res = await fetch(`/api/admin/orders?orderNumber=${order.orderNumber}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        showFeedback('success', `訂單 ${order.orderNumber} 已成功刪除作廢！`);
+        fetchOrders();
+        fetchUsers();
+        fetchStats();
+        fetchInvoices();
+        fetchAuditLogs();
+      } else {
+        showFeedback('error', data.error || '刪除訂單失敗');
+      }
+    } catch {
+      showFeedback('error', '網路異常，無法刪除訂單');
+    }
+  };
+
   // 手動新建獨立紙本發票單
   const handleCreateManualInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -916,18 +959,18 @@ export default function AdminPage() {
     }
   };
 
-  // 開啟發票資料修改 Modal
+  // 開啟發票與訂單資料修改 Modal (支援所有訂單補齊/修改發票)
   const openEditInvoiceModal = (order: Order) => {
-    if (!order.invoice) return;
     setEditingInvoiceOrder(order);
+    const inv = order.invoice;
     setEditInvoiceData({
-      type: order.invoice.type || 'personal',
-      buyerTitle: order.invoice.buyerTitle || '',
-      taxId: order.invoice.taxId || '',
-      recipientName: order.invoice.recipientName || '',
-      recipientPhone: order.invoice.recipientPhone || '',
-      postalCode: order.invoice.postalCode || '',
-      address: order.invoice.address || '',
+      type: inv?.type || 'personal',
+      buyerTitle: inv?.buyerTitle || '',
+      taxId: inv?.taxId || '',
+      recipientName: inv?.recipientName || order.userEmail.split('@')[0],
+      recipientPhone: inv?.recipientPhone || '0900000000',
+      postalCode: inv?.postalCode || '100',
+      address: inv?.address || '',
     });
     setIsEditInvoiceModalOpen(true);
   };
@@ -954,6 +997,8 @@ export default function AdminPage() {
         setIsEditInvoiceModalOpen(false);
         setEditingInvoiceOrder(null);
         fetchInvoices();
+        fetchOrders();
+        fetchStats();
         fetchAuditLogs();
       } else {
         showFeedback('error', data.error || '修改發票資料失敗');
@@ -1075,12 +1120,19 @@ export default function AdminPage() {
     }
   };
 
-  // 篩選後會員清單
+  // 篩選後會員清單（支援姓名、Email、公司、統編、電話、地址與行業關鍵字全面檢索）
   const filteredUsers = useMemo(() => {
     return usersList.filter((u) => {
+      const q = userSearchQuery.trim().toLowerCase();
       const matchesSearch =
-        u.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
-        u.email.toLowerCase().includes(userSearchQuery.toLowerCase());
+        !q ||
+        u.name.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        (u.phone && u.phone.toLowerCase().includes(q)) ||
+        (u.company && u.company.toLowerCase().includes(q)) ||
+        (u.taxId && u.taxId.includes(q)) ||
+        (u.industry && u.industry.toLowerCase().includes(q)) ||
+        (u.address && u.address.toLowerCase().includes(q));
       const matchesRole = userRoleFilter === 'all' || u.role === userRoleFilter;
       return matchesSearch && matchesRole;
     });
@@ -1304,9 +1356,9 @@ export default function AdminPage() {
           </button>
           <div className="h-4 w-px bg-slate-800" />
           <div className="text-right hidden sm:block">
-            <span className="text-xs text-slate-400 block">{user?.name || '系統最高管理員'}</span>
+            <span className="text-xs text-slate-400 block">{user?.name || '吳俊彥'}</span>
             <span className="text-[10px] text-amber-400/90 font-mono block">
-              {user?.email || 'admin@omni-astrology.com'}
+              {user?.email || 'opelwu2002@gmail.com'}
             </span>
           </div>
           <button
@@ -1754,9 +1806,12 @@ export default function AdminPage() {
                   <thead>
                     <tr className="border-b border-slate-800 bg-slate-950/60 text-slate-400">
                       <th className="py-3 px-4 font-semibold">會員資訊</th>
+                      <th className="py-3 px-4 font-semibold">企業機構 / 統編</th>
+                      <th className="py-3 px-4 font-semibold">行業分類</th>
+                      <th className="py-3 px-4 font-semibold">電話 / 通訊地址</th>
                       <th className="py-3 px-4 font-semibold">身分角色</th>
                       <th className="py-3 px-4 font-semibold">帳號狀態</th>
-                      <th className="py-3 px-4 font-semibold">已解鎖權限方案</th>
+                      <th className="py-3 px-4 font-semibold">已解鎖權限</th>
                       <th className="py-3 px-4 font-semibold">註冊時間</th>
                       <th className="py-3 px-4 font-semibold text-right">內控操作</th>
                     </tr>
@@ -1764,7 +1819,7 @@ export default function AdminPage() {
                   <tbody className="divide-y divide-slate-800/60 text-slate-300">
                     {filteredUsers.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-slate-500">
+                        <td colSpan={9} className="py-8 text-center text-slate-500">
                           無符合條件之會員資料
                         </td>
                       </tr>
@@ -1774,6 +1829,23 @@ export default function AdminPage() {
                           <td className="py-3 px-4">
                             <div className="font-semibold text-white">{u.name}</div>
                             <div className="text-slate-400 font-mono text-[11px]">{u.email}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-white font-medium">{u.company || '—'}</div>
+                            {u.taxId && (
+                              <div className="text-[11px] text-amber-400 font-mono">統編：{u.taxId}</div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 bg-slate-800/80 border border-slate-700 rounded text-[11px] text-slate-300">
+                              {u.industry || '服務業'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-slate-300 font-mono text-[11px]">{u.phone || '—'}</div>
+                            <div className="text-[10px] text-slate-500 truncate max-w-[140px]" title={u.address || ''}>
+                              {u.address || '—'}
+                            </div>
                           </td>
                           <td className="py-3 px-4">
                             {u.role === 'admin' ? (
@@ -2003,21 +2075,21 @@ export default function AdminPage() {
                           </td>
                           <td className="py-3 px-4 text-right">
                             <div className="inline-flex items-center gap-1.5">
-                              {/* 修改金額按鈕 */}
+                              {/* 修改發票與訂單內容按鈕 */}
                               <button
-                                onClick={() => openEditAmountModal(o)}
-                                className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded-lg transition text-[11px] flex items-center gap-1"
-                                title="修改訂單金額與備註"
+                                onClick={() => openEditInvoiceModal(o)}
+                                className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded-lg transition text-[11px] flex items-center gap-1 cursor-pointer"
+                                title="修改訂單內容與發票抬頭統編寄送地址"
                               >
                                 <Edit3 className="w-3 h-3" />
-                                改金額
+                                編輯發票/訂單
                               </button>
 
                               {/* 待付款 ➔ 確認付款按鈕 */}
                               {o.status === 'pending' && (
                                 <button
                                   onClick={() => handleConfirmOrderPaid(o)}
-                                  className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/40 rounded-lg transition text-[11px] font-semibold flex items-center gap-1"
+                                  className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/40 rounded-lg transition text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
                                 >
                                   <Check className="w-3 h-3" />
                                   確認收款
@@ -2028,7 +2100,7 @@ export default function AdminPage() {
                               {o.status === 'paid' && (
                                 <button
                                   onClick={() => handleRefundOrder(o)}
-                                  className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition text-[11px] flex items-center gap-1"
+                                  className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition text-[11px] flex items-center gap-1 cursor-pointer"
                                   title="標記退款並自動收回該會員報告權限"
                                 >
                                   <RotateCcw className="w-3 h-3" />
@@ -2036,18 +2108,14 @@ export default function AdminPage() {
                                 </button>
                               )}
 
-                              {o.invoice && (
-                                <button
-                                  onClick={() => {
-                                    setActiveTab('invoices');
-                                    openEditInvoiceModal(o);
-                                  }}
-                                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[11px] border border-slate-700"
-                                  title="檢視/編輯發票"
-                                >
-                                  發票
-                                </button>
-                              )}
+                              {/* 刪除訂單 / 退款作廢按鈕 */}
+                              <button
+                                onClick={() => handleDeleteOrder(o)}
+                                className="p-1 hover:bg-rose-500/20 text-rose-400 border border-transparent hover:border-rose-500/40 rounded-lg transition cursor-pointer"
+                                title="刪除訂單 / 作廢清除"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </td>
                         </tr>

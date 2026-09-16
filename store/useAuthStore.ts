@@ -2,7 +2,7 @@
  * 會員認證狀態管理 (Zustand)
  */
 import { create } from 'zustand';
-import { UserSafe } from '@/types/auth';
+import { UserSafe, RegisterParams } from '@/types/auth';
 import { UserProfile } from '@/types/profile';
 
 interface AuthState {
@@ -16,9 +16,12 @@ interface AuthState {
   setAuthModalOpen: (open: boolean, mode?: 'login' | 'register') => void;
   setAuth: (user: UserSafe, token: string) => void;
   login: (accountOrEmail: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  register: (email: string, password: string, name?: string) => Promise<{ success: boolean; error?: string }>;
+  register: (
+    params: RegisterParams | { email: string; password: string; name?: string }
+  ) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   checkAuth: () => Promise<void>;
+  refreshAuth: () => Promise<void>;
   syncProfilesToCloud: (profiles: UserProfile[]) => Promise<boolean>;
   loadProfilesFromCloud: () => Promise<UserProfile[] | null>;
 }
@@ -80,13 +83,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  register: async (email, password, name) => {
+  register: async (params: RegisterParams | { email: string; password: string; name?: string }) => {
     set({ isLoading: true });
     try {
+      const payload = {
+        phone: '0900000000',
+        industry: '其他',
+        address: '台北市',
+        ...params,
+      };
+
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -116,25 +126,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   checkAuth: async () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-    const adminAuth = typeof window !== 'undefined' ? localStorage.getItem('omni_admin_auth') : null;
+    // 預設絕對維持訪客模式，只有真正存在合法 auth_token 且通過後端驗證才賦予登入態
+    if (typeof window === 'undefined') return;
 
-    // 若本地記錄最高管理員且標記有效，預先解除畫面遮罩
-    if (adminAuth === 'true') {
-      const masterAdminUser: UserSafe = {
-        id: 'admin-master-001',
-        email: 'admin@omni-astrology.com',
-        name: '系統最高管理員',
-        role: 'admin',
-        status: 'active',
-        unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],
-        createdAt: 1700000000000,
-        lastLoginAt: Date.now(),
-      };
-      set({ user: masterAdminUser, token: token || 'omni-master-admin-token' });
+    const token = localStorage.getItem('auth_token');
+
+    // 若完全沒有 token，強制保持乾淨的未登入訪客狀態
+    if (!token) {
+      set({ user: null, token: null });
+      return;
     }
-
-    if (!token) return;
 
     try {
       const res = await fetch('/api/auth/me', {
@@ -143,17 +144,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const data = await res.json();
       if (data.success && data.user) {
         set({ user: data.user, token });
-      } else {
-        if (adminAuth !== 'true') {
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('auth_token');
-          }
-          set({ user: null, token: null });
+        // 同步最新的 unlockedTiers 到本地快取
+        if (Array.isArray(data.user.unlockedTiers)) {
+          localStorage.setItem('omni_unlocked_tiers', JSON.stringify(data.user.unlockedTiers));
         }
+      } else {
+        // Token 無效或已過期，徹底清理所有認證儲存，嚴格退回訪客模式
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('omni_admin_auth');
+        localStorage.removeItem('admin_user');
+        set({ user: null, token: null });
       }
     } catch {
-      // 網路離線時不硬性中斷
+      // 網路離線時不破壞當前狀態
     }
+  },
+
+  refreshAuth: async () => {
+    await get().checkAuth();
   },
 
   syncProfilesToCloud: async (profiles) => {

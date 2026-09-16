@@ -14,6 +14,7 @@ import { InterpretationReport } from '@/types/astrology';
 import CheckoutModal from '@/components/payment/CheckoutModal';
 import SanctuaryDrawer from '@/components/SanctuaryDrawer';
 import LegalDisclaimerModal from '@/components/LegalDisclaimerModal';
+import { useAuthStore } from '@/store/useAuthStore';
 import {
   Sparkles,
   Briefcase,
@@ -85,6 +86,9 @@ export default function InterpretationView({
   const [completedTasks, setCompletedTasks] = useState<string[]>([]);
   const [showLegalModal, setShowLegalModal] = useState<boolean>(false);
 
+  const user = useAuthStore((state) => state.user);
+  const checkAuth = useAuthStore((state) => state.checkAuth);
+
   // 付費解鎖狀態管理 (儲存於 localStorage 以保持會話持久)
   const [unlockedTiers, setUnlockedTiers] = useState<string[]>(['free']);
   const [checkoutModalProps, setCheckoutModalProps] = useState<{
@@ -103,8 +107,9 @@ export default function InterpretationView({
     features: [],
   });
 
-  // 載入本地已解鎖狀態與開運待辦打勾狀態
+  // 載入時主動向後端刷新用戶最新解鎖方案與讀取開運待辦打勾狀態
   useEffect(() => {
+    checkAuth();
     try {
       const saved = localStorage.getItem('omni_unlocked_tiers');
       if (saved) {
@@ -117,7 +122,7 @@ export default function InterpretationView({
     } catch {
       // 容錯
     }
-  }, []);
+  }, [checkAuth]);
 
   const toggleTask = (taskId: string) => {
     setCompletedTasks((prev) => {
@@ -215,11 +220,29 @@ export default function InterpretationView({
     }
     const unique = Array.from(new Set(updated));
     setUnlockedTiers(unique);
-    localStorage.setItem('omni_unlocked_tiers', JSON.stringify(unique));
+    try {
+      localStorage.setItem('omni_unlocked_tiers', JSON.stringify(unique));
+    } catch {}
+    checkAuth();
   };
 
-  const isLevel2Unlocked = unlockedTiers.includes('level2') || unlockedTiers.includes('level3');
-  const isLevel3Unlocked = unlockedTiers.includes('level3');
+  // 綜合判定解鎖權限（優先讀取後端即時同步之會員權限，管理員全開，離線訪客支援本地快取）
+  const effectiveTiers = React.useMemo(() => {
+    if (user?.role === 'admin') {
+      return ['free', 'level2', 'level3', 'synastry_addon'];
+    }
+    const tiers = new Set<string>(['free']);
+    if (user?.unlockedTiers && Array.isArray(user.unlockedTiers)) {
+      user.unlockedTiers.forEach((t) => tiers.add(t));
+    }
+    if (Array.isArray(unlockedTiers)) {
+      unlockedTiers.forEach((t) => tiers.add(t));
+    }
+    return Array.from(tiers);
+  }, [user, unlockedTiers]);
+
+  const isLevel2Unlocked = effectiveTiers.includes('level2') || effectiveTiers.includes('level3');
+  const isLevel3Unlocked = effectiveTiers.includes('level3');
 
   return (
     <div className="bg-slate-900/95 border border-purple-500/30 rounded-2xl p-4 sm:p-6 shadow-2xl backdrop-blur-md">

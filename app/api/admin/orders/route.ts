@@ -6,9 +6,12 @@ import {
   updateOrderRefundStatus,
   updateOrderStatus,
   updateOrderAmount,
+  updateOrderDetails,
+  updateInvoiceData,
+  deleteOrder,
   addAuditLog,
 } from '@/lib/db';
-import { UnlockTier } from '@/types/auth';
+import { UnlockTier, InvoiceInfo } from '@/types/auth';
 
 // 取得所有訂單清單
 export async function GET(request: Request) {
@@ -28,7 +31,7 @@ export async function GET(request: Request) {
   }
 }
 
-// 建立離線/人工補單 (ATM 轉帳、LINE Pay、街口、線下匯款等)
+// 建立離線/人工補單 (ATM 轉帳、LINE Pay、街口、線下匯款等雜費/補單)
 export async function POST(request: Request) {
   try {
     const user = getCurrentUserFromRequest(request);
@@ -49,7 +52,7 @@ export async function POST(request: Request) {
       note,
     } = body;
 
-    if (!userEmail || !tier || !amount) {
+    if (!userEmail || !tier || amount === undefined) {
       return NextResponse.json(
         { success: false, error: '請提供完整的客戶 Email、方案與金額' },
         { status: 400 }
@@ -58,11 +61,11 @@ export async function POST(request: Request) {
 
     const newOrder = createManualOrder({
       userId,
-      userEmail,
+      userEmail: userEmail.trim(),
       tier: tier as UnlockTier,
       tierName: tierName || '手動建立方案',
       amount: Number(amount),
-      paymentMethod: paymentMethod || 'atm',
+      paymentMethod: paymentMethod || 'manual',
       status: status || 'paid',
       invoice,
       note,
@@ -74,7 +77,7 @@ export async function POST(request: Request) {
       action: 'order_create_manual',
       targetId: newOrder.orderNumber,
       targetType: 'order',
-      details: `手動離線補單：客戶 ${newOrder.userEmail}，方案 ${newOrder.tierName}，金額 NT$ ${newOrder.amount}，付款方式：${newOrder.paymentMethod}，狀態：${newOrder.status}`,
+      details: `手動人工補單：客戶 ${newOrder.userEmail}，方案 ${newOrder.tierName}，金額 NT$ ${newOrder.amount}，付款方式：${newOrder.paymentMethod}，狀態：${newOrder.status}`,
     });
 
     return NextResponse.json({
@@ -90,7 +93,7 @@ export async function POST(request: Request) {
   }
 }
 
-// 修改訂單狀態（退款或手動確認付款）
+// 修改訂單內容（包含發票資訊、金額、方案或退款作廢）
 export async function PATCH(request: Request) {
   try {
     const user = getCurrentUserFromRequest(request);
@@ -99,13 +102,13 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const { orderNumber, action, status } = body;
+    const { orderNumber, action, status, invoice, amount, tier, tierName, note } = body;
 
     if (!orderNumber) {
       return NextResponse.json({ success: false, error: '缺少訂單編號' }, { status: 400 });
     }
 
-    // 處理退款（自動連動收回會員報告解鎖權限）
+    // 1. 處理退款（自動連動收回會員報告解鎖權限）
     if (action === 'refund') {
       const updated = updateOrderRefundStatus(orderNumber);
       if (!updated) {
@@ -128,7 +131,7 @@ export async function PATCH(request: Request) {
       });
     }
 
-    // 處理狀態變更（例如由 pending 變更為 paid）
+    // 2. 處理狀態變更（例如由 pending 變更為 paid）
     if (action === 'status' && status) {
       const updated = updateOrderStatus(orderNumber, status);
       if (!updated) {
@@ -151,9 +154,62 @@ export async function PATCH(request: Request) {
       });
     }
 
-    // 處理訂單金額與備註修改
+    // 3. 處理發票開立相關欄位修改（抬頭、統編、收件人、電話、地址）
+    if (action === 'invoice' && invoice) {
+      const updated = updateInvoiceData(orderNumber, invoice);
+      if (!updated) {
+        return NextResponse.json({ success: false, error: '找不到指定訂單' }, { status: 404 });
+      }
+
+      addAuditLog({
+        adminId: user.id,
+        adminEmail: user.email,
+        action: 'invoice_update_data',
+        targetId: orderNumber,
+        targetType: 'invoice',
+        details: `修改訂單 ${orderNumber} 發票資訊：抬頭「${invoice.buyerTitle || '個人'}」，統編「${invoice.taxId || '無'}」，收件人「${invoice.recipientName}」`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        order: updated,
+        message: `訂單 ${orderNumber} 發票與寄送資訊已成功更新！`,
+      });
+    }
+
+    // 4. 處理完整訂單內容修改（金額、方案、發票與備註）
+    if (action === 'edit') {
+      const updated = updateOrderDetails(orderNumber, {
+        amount,
+        tier,
+        tierName,
+        status,
+        invoice,
+        note,
+      });
+
+      if (!updated) {
+        return NextResponse.json({ success: false, error: '找不到指定訂單' }, { status: 404 });
+      }
+
+      addAuditLog({
+        adminId: user.id,
+        adminEmail: user.email,
+        action: 'order_amount_update',
+        targetId: orderNumber,
+        targetType: 'order',
+        details: `管理員完整修改訂單 ${orderNumber}：金額 NT$ ${amount || updated.amount}，方案 ${tierName || updated.tierName}，狀態 ${status || updated.status}`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        order: updated,
+        message: `訂單 ${orderNumber} 內容已成功修改儲存！`,
+      });
+    }
+
+    // 5. 處理單純金額與備註修改
     if (action === 'amount') {
-      const { amount, note } = body;
       if (amount === undefined || isNaN(Number(amount))) {
         return NextResponse.json({ success: false, error: '請提供有效的金額數值' }, { status: 400 });
       }
@@ -183,6 +239,47 @@ export async function PATCH(request: Request) {
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error?.message || '更新訂單狀態失敗' },
+      { status: 500 }
+    );
+  }
+}
+
+// 刪除訂單 / 退款作廢
+export async function DELETE(request: Request) {
+  try {
+    const user = getCurrentUserFromRequest(request);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ success: false, error: '無管理員權限' }, { status: 403 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const orderNumber = searchParams.get('orderNumber');
+
+    if (!orderNumber) {
+      return NextResponse.json({ success: false, error: '請提供訂單編號' }, { status: 400 });
+    }
+
+    const success = deleteOrder(orderNumber, true);
+    if (!success) {
+      return NextResponse.json({ success: false, error: '找不到欲刪除的訂單' }, { status: 404 });
+    }
+
+    addAuditLog({
+      adminId: user.id,
+      adminEmail: user.email,
+      action: 'order_refund',
+      targetId: orderNumber,
+      targetType: 'order',
+      details: `管理員永久刪除訂單：${orderNumber}，並連動收回該會員對應等級權限`,
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `訂單 ${orderNumber} 已成功刪除作廢，並連動收回相關權限！`,
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error?.message || '刪除訂單失敗' },
       { status: 500 }
     );
   }

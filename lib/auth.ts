@@ -9,7 +9,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'omni-astrology-super-jwt-secret-20
 // 系統最高管理者鎖定憑證 (硬性設定與環境變數相容)
 export const MASTER_ADMIN_CREDENTIALS = {
   account: 'admin',
-  email: 'admin@omni-astrology.com',
+  email: 'opelwu2002@gmail.com',
+  name: '吳俊彥',
   rawPassword: process.env.ADMIN_PASSWORD || 'Opel6439',
 };
 
@@ -84,8 +85,8 @@ export function getCurrentUserFromRequest(request: Request): UserSafe | null {
   if (token === 'omni-master-admin-token') {
     return {
       id: 'admin-master-001',
-      email: 'admin@omni-astrology.com',
-      name: '系統最高管理員',
+      email: 'opelwu2002@gmail.com',
+      name: '吳俊彥',
       role: 'admin',
       status: 'active',
       unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],
@@ -101,7 +102,7 @@ export function getCurrentUserFromRequest(request: Request): UserSafe | null {
   if (
     payload.role === 'admin' &&
     (payload.userId === 'admin-master-001' ||
-      payload.email === 'admin@omni-astrology.com' ||
+      payload.email === 'opelwu2002@gmail.com' ||
       payload.email === 'admin')
   ) {
     const existing = findUserById(payload.userId);
@@ -111,8 +112,8 @@ export function getCurrentUserFromRequest(request: Request): UserSafe | null {
     }
     return {
       id: 'admin-master-001',
-      email: 'admin@omni-astrology.com',
-      name: '系統最高管理員',
+      email: 'opelwu2002@gmail.com',
+      name: '吳俊彥',
       role: 'admin',
       status: 'active',
       unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],

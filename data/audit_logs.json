@@ -1,24 +1,64 @@
 [
   {
+    "id": "audit-1789566384381-291za",
+    "timestamp": 1789566384381,
+    "adminId": "user-1789518932653-wba48",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "user_update",
+    "targetId": "user-1789565978547-v7nxp",
+    "targetType": "user",
+    "details": "更新會員 peirung1121@gmail.com 資料：姓名更新為「吳沛融」、角色變更為「user」、狀態設為「active」、解鎖權限調整為 [free, level2, synastry_addon, level3]"
+  },
+  {
+    "id": "audit-1789566373290-7fpew",
+    "timestamp": 1789566373290,
+    "adminId": "user-1789518932653-wba48",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "user_suspend",
+    "targetId": "user-1789565863070-k3u4w",
+    "targetType": "user",
+    "details": "永久刪除會員 ID/Email: user-1789565863070-k3u4w"
+  },
+  {
+    "id": "audit-1789566370696-6qf63",
+    "timestamp": 1789566370696,
+    "adminId": "user-1789518932653-wba48",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "user_suspend",
+    "targetId": "user-1789565863666-vc6cl",
+    "targetType": "user",
+    "details": "永久刪除會員 ID/Email: user-1789565863666-vc6cl"
+  },
+  {
+    "id": "audit-1789566283647-0q11q",
+    "timestamp": 1789566283647,
+    "adminId": "user-1789518932653-wba48",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "user_update",
+    "targetId": "user-1789565978547-v7nxp",
+    "targetType": "user",
+    "details": "更新會員 peirung1121@gmail.com 資料：姓名更新為「吳沛融」、角色變更為「user」、狀態設為「active」、解鎖權限調整為 [free, level2, synastry_addon, level3]"
+  },
+  {
     "id": "audit-init-001",
     "adminId": "admin-master-001",
-    "adminEmail": "admin@omni-astrology.com",
+    "adminEmail": "opelwu2002@gmail.com",
     "action": "order_status_change",
     "targetId": "ORD-20260910-8831",
     "targetType": "order",
     "details": "系統啟動：初次對帳同步訂單狀態為已付款",
     "ip": "127.0.0.1",
-    "timestamp": 1789183744797
+    "timestamp": 1789220670697
   },
   {
     "id": "audit-init-002",
     "adminId": "admin-master-001",
-    "adminEmail": "admin@omni-astrology.com",
+    "adminEmail": "opelwu2002@gmail.com",
     "action": "invoice_status_change",
     "targetId": "ORD-20260910-8831",
     "targetType": "invoice",
     "details": "紙本發票狀態推進：已開立 ➔ 已寄出（掛號單號 928374615243）",
     "ip": "127.0.0.1",
-    "timestamp": 1789356544797
+    "timestamp": 1789393470697
   }
 ]

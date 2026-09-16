@@ -336,13 +336,13 @@ export default function AdminInvoicesPage() {
 
     // 【第一優先強制硬編碼放行，不依賴外部資料庫或複雜雜湊】
     if (
-      (enteredUser === 'admin' || enteredUser === 'admin@omni-astrology.com') &&
+      (enteredUser === 'admin' || enteredUser === 'opelwu2002@gmail.com') &&
       enteredPass === 'Opel6439'
     ) {
       const masterAdminUser = {
         id: 'admin-master-001',
-        email: 'admin@omni-astrology.com',
-        name: '系統最高管理員',
+        email: 'opelwu2002@gmail.com',
+        name: '吳俊彥',
         role: 'admin' as const,
         status: 'active' as const,
         unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'] as any[],

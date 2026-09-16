@@ -3,6 +3,7 @@ import { getCurrentUserFromRequest } from '@/lib/auth';
 import { createOrder } from '@/lib/db';
 import { ECPAY_CONFIG, generateCheckMacValue, getEcpayTradeDate } from '@/lib/ecpay';
 import { UnlockTier, InvoiceInfo } from '@/types/auth';
+import { isValidTaiwanTaxId } from '@/lib/validators';
 
 /**
  * 綠界金流發起結帳端點
@@ -37,11 +38,19 @@ export async function POST(request: Request) {
       );
     }
 
-    if (invoice.type === 'company' && (!invoice.taxId || !invoice.buyerTitle)) {
-      return NextResponse.json(
-        { success: false, error: '三聯式公司發票請填寫完整公司抬頭與 8 碼統一編號' },
-        { status: 400 }
-      );
+    if (invoice.type === 'company') {
+      if (!invoice.taxId || !invoice.buyerTitle) {
+        return NextResponse.json(
+          { success: false, error: '三聯式公司發票請填寫完整公司抬頭與 8 碼統一編號' },
+          { status: 400 }
+        );
+      }
+      if (!isValidTaiwanTaxId(invoice.taxId.trim())) {
+        return NextResponse.json(
+          { success: false, error: '三聯式統一編號未通過財政部標準除以 10 邏輯驗證' },
+          { status: 400 }
+        );
+      }
     }
 
     // 3. 取得當前會員資訊（若無則為訪客）

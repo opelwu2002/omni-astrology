@@ -18,17 +18,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // 【最高優先直接比對】：admin / Opel6439
+    // 【最高優先直接比對】：admin 或 opelwu2002@gmail.com / Opel6439
     if (
       (account.toLowerCase() === 'admin' ||
-        account.toLowerCase() === 'admin@omni-astrology.com') &&
+        account.toLowerCase() === 'opelwu2002@gmail.com') &&
       password === 'Opel6439'
     ) {
-      const verifyResult = await verifyUserCredentials('admin@omni-astrology.com', 'Opel6439');
+      const verifyResult = await verifyUserCredentials('opelwu2002@gmail.com', 'Opel6439');
       const safeUser = verifyResult.user || {
         id: 'admin-master-001',
-        email: 'admin@omni-astrology.com',
-        name: '系統最高管理員',
+        email: 'opelwu2002@gmail.com',
+        name: '吳俊彥',
         role: 'admin',
         status: 'active',
         unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],

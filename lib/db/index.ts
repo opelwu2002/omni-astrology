@@ -8,6 +8,8 @@ import bcrypt from 'bcryptjs';
 import {
   User,
   UserSafe,
+  UserRole,
+  UserStatus,
   UserProfileStorage,
   SystemStats,
   Order,
@@ -57,21 +59,24 @@ let cachedUserProfiles: Record<string, UserProfile[]> = {};
  * 在雲端/生產環境下，禁止任何向專案本機檔案寫入的操作，全由記憶體快取與雲端資料庫接管
  */
 function safeWriteFileSync(filePath: string, data: any): void {
-  const isServerlessOrProd =
+  const isServerlessReadOnly =
     Boolean(process.env.VERCEL) ||
     Boolean(process.env.NOW_REGION) ||
     Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) ||
     Boolean(process.env.LAMBDA_TASK_ROOT) ||
-    process.env.NODE_ENV === 'production' ||
     filePath.includes('/var/task') ||
     filePath.includes('\\var\\task');
 
-  if (isServerlessOrProd) {
-    // 雲端生產與 Serverless 環境完全不執行任何檔案寫入，全由記憶體快取或外接資料庫接管
+  if (isServerlessReadOnly) {
+    // 雲端 Serverless 唯讀環境不執行檔案寫入，由記憶體快取或外接資料庫接管
     return;
   }
 
   try {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     const serialized = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
     fs.writeFileSync(filePath, serialized, 'utf-8');
   } catch {
@@ -79,7 +84,7 @@ function safeWriteFileSync(filePath: string, data: any): void {
   }
 }
 
-// 初始化預設管理員與測試使用者
+// 初始化預設管理員與使用者（以 opelwu2002@gmail.com 吳俊彥為系統最高管理員）
 function initUsers(): User[] {
   if (cachedUsers) return cachedUsers;
 
@@ -90,15 +95,37 @@ function initUsers(): User[] {
   if (fs.existsSync(USERS_FILE)) {
     try {
       const content = fs.readFileSync(USERS_FILE, 'utf-8');
-      const list: User[] = JSON.parse(content);
-      const adminUser = list.find((u) => u.id === 'admin-master-001' || u.role === 'admin');
-      if (adminUser) {
-        // 強制校正最高管理者密碼雜湊為 Opel6439
-        if (!bcrypt.compareSync('Opel6439', adminUser.passwordHash)) {
-          adminUser.passwordHash = masterAdminPasswordHash;
-          safeWriteFileSync(USERS_FILE, list);
-        }
+      let list: User[] = JSON.parse(content);
+
+      // 1. 徹底過濾刪除舊管理員 admin@omni-astrology.com
+      list = list.filter(
+        (u) => u.email.toLowerCase() !== 'admin@omni-astrology.com'
+      );
+
+      // 2. 確保 opelwu2002@gmail.com 擁有最高管理員 admin 權限
+      let opelAdmin = list.find(
+        (u) => u.email.toLowerCase() === 'opelwu2002@gmail.com'
+      );
+      if (opelAdmin) {
+        opelAdmin.role = 'admin';
+        opelAdmin.name = '吳俊彥';
+        opelAdmin.unlockedTiers = ['free', 'level2', 'level3', 'synastry_addon'];
+      } else {
+        opelAdmin = {
+          id: 'admin-master-001',
+          email: 'opelwu2002@gmail.com',
+          passwordHash: masterAdminPasswordHash,
+          name: '吳俊彥',
+          role: 'admin',
+          status: 'active',
+          unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],
+          createdAt: 1786868793061,
+          lastLoginAt: Date.now(),
+        };
+        list.unshift(opelAdmin);
       }
+
+      safeWriteFileSync(USERS_FILE, list);
       cachedUsers = list;
       return list;
     } catch {
@@ -109,11 +136,12 @@ function initUsers(): User[] {
   const initialUsers: User[] = [
     {
       id: 'admin-master-001',
-      email: 'admin@omni-astrology.com',
+      email: 'opelwu2002@gmail.com',
       passwordHash: masterAdminPasswordHash,
-      name: '系統最高管理員',
+      name: '吳俊彥',
       role: 'admin',
       status: 'active',
+      unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],
       createdAt: Date.now() - 30 * 86400 * 1000,
       lastLoginAt: Date.now(),
     },
@@ -130,6 +158,7 @@ function initUsers(): User[] {
   ];
 
   safeWriteFileSync(USERS_FILE, initialUsers);
+  cachedUsers = initialUsers;
   return initialUsers;
 }
 
@@ -148,7 +177,7 @@ function initAuditLogs(): AuditLog[] {
     {
       id: 'audit-init-001',
       adminId: 'admin-master-001',
-      adminEmail: 'admin@omni-astrology.com',
+      adminEmail: 'opelwu2002@gmail.com',
       action: 'order_status_change',
       targetId: 'ORD-20260910-8831',
       targetType: 'order',
@@ -159,7 +188,7 @@ function initAuditLogs(): AuditLog[] {
     {
       id: 'audit-init-002',
       adminId: 'admin-master-001',
-      adminEmail: 'admin@omni-astrology.com',
+      adminEmail: 'opelwu2002@gmail.com',
       action: 'invoice_status_change',
       targetId: 'ORD-20260910-8831',
       targetType: 'invoice',
@@ -266,6 +295,7 @@ export function getUsers(): User[] {
 
 // 儲存會員
 export function saveUsers(users: User[]): void {
+  cachedUsers = [...users];
   safeWriteFileSync(USERS_FILE, users);
 }
 
@@ -275,12 +305,12 @@ export function toSafeUser(user: User): UserSafe {
   return safe;
 }
 
-// 依據 Email 或帳號尋找使用者 (支援最高管理者帳號 admin)
+// 依據 Email 或帳號尋找使用者 (支援最高管理者帳號 admin 與 opelwu2002@gmail.com)
 export function findUserByEmail(email: string): User | undefined {
   const users = getUsers();
   const query = email.trim().toLowerCase();
-  if (query === 'admin' || query === 'admin@omni-astrology.com') {
-    return users.find((u) => u.role === 'admin' || u.id === 'admin-master-001');
+  if (query === 'admin' || query === 'opelwu2002@gmail.com') {
+    return users.find((u) => u.email.toLowerCase() === 'opelwu2002@gmail.com' || u.role === 'admin');
   }
   return users.find((u) => u.email.toLowerCase() === query);
 }
@@ -291,13 +321,43 @@ export function findUserById(id: string): User | undefined {
   return users.find((u) => u.id === id);
 }
 
-// 建立新會員
-export function createUser(email: string, password: string,name: string): UserSafe {
+// 建立新會員（支援完整企業欄位或舊版三參數）
+export function createUser(
+  paramsOrEmail:
+    | string
+    | {
+        email: string;
+        password: string;
+        name: string;
+        phone?: string;
+        company?: string;
+        taxId?: string;
+        industry?: string;
+        address?: string;
+        role?: UserRole;
+        status?: UserStatus;
+        unlockedTiers?: UnlockTier[];
+      },
+  legacyPassword?: string,
+  legacyName?: string
+): UserSafe {
   const users = getUsers();
-  const existing = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  const email =
+    typeof paramsOrEmail === 'string'
+      ? paramsOrEmail.trim().toLowerCase()
+      : paramsOrEmail.email.trim().toLowerCase();
+
+  const existing = users.find((u) => u.email.toLowerCase() === email);
   if (existing) {
     throw new Error('此電子郵件已被註冊');
   }
+
+  const password =
+    typeof paramsOrEmail === 'string' ? legacyPassword || '' : paramsOrEmail.password;
+  const name =
+    typeof paramsOrEmail === 'string'
+      ? legacyName || email.split('@')[0]
+      : paramsOrEmail.name || email.split('@')[0];
 
   const salt = bcrypt.genSaltSync(10);
   const passwordHash = bcrypt.hashSync(password, salt);
@@ -306,21 +366,43 @@ export function createUser(email: string, password: string,name: string): UserSa
     id: `user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     email,
     passwordHash,
-    name: name || email.split('@')[0],
-    role: 'user',
-    status: 'active',
+    name,
+    role: typeof paramsOrEmail === 'object' && paramsOrEmail.role ? paramsOrEmail.role : 'user',
+    status: typeof paramsOrEmail === 'object' && paramsOrEmail.status ? paramsOrEmail.status : 'active',
+    phone: typeof paramsOrEmail === 'object' ? paramsOrEmail.phone : undefined,
+    company: typeof paramsOrEmail === 'object' ? paramsOrEmail.company : undefined,
+    taxId: typeof paramsOrEmail === 'object' ? paramsOrEmail.taxId : undefined,
+    industry: typeof paramsOrEmail === 'object' ? paramsOrEmail.industry : undefined,
+    address: typeof paramsOrEmail === 'object' ? paramsOrEmail.address : undefined,
+    unlockedTiers:
+      typeof paramsOrEmail === 'object' && paramsOrEmail.unlockedTiers
+        ? paramsOrEmail.unlockedTiers
+        : ['free'],
     createdAt: Date.now(),
   };
 
-  users.push(newUser);
+  users.unshift(newUser);
   saveUsers(users);
   return toSafeUser(newUser);
+}
+
+// 供 auth-users.ts 同步插入或更新會員（確保前後台完全一致）
+export function upsertUser(user: User): void {
+  const users = getUsers();
+  const cleanEmail = user.email.trim().toLowerCase();
+  const idx = users.findIndex((u) => u.email.toLowerCase() === cleanEmail || u.id === user.id);
+  if (idx !== -1) {
+    users[idx] = { ...users[idx], ...user };
+  } else {
+    users.unshift(user);
+  }
+  saveUsers(users);
 }
 
 // 更新會員狀態或角色
 export function updateUser(
   id: string,
-  updateData: Partial<Pick<User, 'name' | 'role' | 'status' | 'lastLoginAt'>>
+  updateData: Partial<Pick<User, 'name' | 'role' | 'status' | 'phone' | 'company' | 'taxId' | 'industry' | 'address' | 'lastLoginAt'>>
 ): UserSafe {
   const users = getUsers();
   const idx = users.findIndex((u) => u.id === id);
@@ -333,11 +415,39 @@ export function updateUser(
   return toSafeUser(users[idx]);
 }
 
-// 刪除會員
-export function deleteUser(id: string): void {
+// 刪除會員（支援依據 ID 或 Email 雙向精準刪除，保護最高管理者，連動清理存檔與統計）
+export function deleteUser(idOrEmail: string): UserSafe[] {
+  const target = idOrEmail.trim().toLowerCase();
   let users = getUsers();
-  users = users.filter((u) => u.id !== id);
+
+  // 保護系統最高管理員 opelwu2002@gmail.com 絕對不可被刪除
+  users = users.filter((u) => {
+    if (u.id === 'admin-master-001' || u.role === 'admin' || u.email.toLowerCase() === 'opelwu2002@gmail.com') {
+      return true;
+    }
+    if (u.id === idOrEmail) return false;
+    if (u.id.toLowerCase() === target) return false;
+    if (u.email.toLowerCase() === target) return false;
+    return true;
+  });
+
   saveUsers(users);
+
+  // 若配置 Supabase，同步執行雲端資料庫刪除
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        supabase
+          .from('users')
+          .delete()
+          .or(`id.eq.${idOrEmail},email.eq.${target}`)
+          .then(() => {});
+      }
+    } catch {}
+  }
+
+  return users.map(toSafeUser);
 }
 
 // 管理員直接新增會員
@@ -345,6 +455,11 @@ export function adminCreateUser(params: {
   email: string;
   password: string;
   name: string;
+  phone?: string;
+  company?: string;
+  taxId?: string;
+  industry?: string;
+  address?: string;
   role?: 'user' | 'admin';
   status?: 'active' | 'suspended';
   unlockedTiers?: UnlockTier[];
@@ -367,6 +482,11 @@ export function adminCreateUser(params: {
     name: params.name || params.email.split('@')[0],
     role: params.role || 'user',
     status: params.status || 'active',
+    phone: params.phone,
+    company: params.company,
+    taxId: params.taxId,
+    industry: params.industry,
+    address: params.address,
     unlockedTiers:
       params.unlockedTiers && params.unlockedTiers.length > 0
         ? params.unlockedTiers
@@ -379,7 +499,7 @@ export function adminCreateUser(params: {
   return toSafeUser(newUser);
 }
 
-// 管理員修改會員資料（包含密碼重設與解鎖權限調整）
+// 管理員修改會員資料（包含密碼重設、企業資料與解鎖權限調整）
 export function adminUpdateUser(
   id: string,
   params: {
@@ -387,6 +507,11 @@ export function adminUpdateUser(
     role?: 'user' | 'admin';
     status?: 'active' | 'suspended';
     password?: string;
+    phone?: string;
+    company?: string;
+    taxId?: string;
+    industry?: string;
+    address?: string;
     unlockedTiers?: UnlockTier[];
   }
 ): UserSafe {
@@ -399,6 +524,11 @@ export function adminUpdateUser(
   if (params.name !== undefined) users[idx].name = params.name;
   if (params.role !== undefined) users[idx].role = params.role;
   if (params.status !== undefined) users[idx].status = params.status;
+  if (params.phone !== undefined) users[idx].phone = params.phone;
+  if (params.company !== undefined) users[idx].company = params.company;
+  if (params.taxId !== undefined) users[idx].taxId = params.taxId;
+  if (params.industry !== undefined) users[idx].industry = params.industry;
+  if (params.address !== undefined) users[idx].address = params.address;
   if (params.unlockedTiers !== undefined) users[idx].unlockedTiers = params.unlockedTiers;
   if (params.password && params.password.trim().length >= 6) {
     const salt = bcrypt.genSaltSync(10);
@@ -504,12 +634,13 @@ export function getSystemStats(): SystemStats {
   const userGrowthRate =
     totalUsers > 0 ? Number(((todayNewUsers / totalUsers) * 100).toFixed(1)) : 0;
 
-  // 付費轉換率
-  const payingUsers = users.filter(
-    (u) => u.unlockedTiers && u.unlockedTiers.some((t) => t !== 'free')
-  ).length;
+  // 付費轉換率：嚴格以擁有實際已付款 (paid) 訂單之獨立付費會員計算，杜絕特權或贈送干擾
+  const paidUserIds = new Set(
+    paidOrders.map((o) => o.userId).filter((id) => id && !id.startsWith('guest-'))
+  );
+  const payingUsersCount = paidUserIds.size;
   const conversionRate =
-    totalUsers > 0 ? Math.round((payingUsers / totalUsers) * 100) : 18;
+    totalUsers > 0 ? Number(((payingUsersCount / totalUsers) * 100).toFixed(1)) : 0;
 
   // 發票待辦筆數
   const invoiceOrders = orders.filter((o) => !!o.invoice);
@@ -565,7 +696,7 @@ export function getSystemStats(): SystemStats {
     ...stats,
     totalRevenue,
     monthlyRevenue,
-    conversionRate: conversionRate || 18,
+    conversionRate,
     totalUsers,
     todayNewUsers,
     userGrowthRate,
@@ -866,6 +997,73 @@ export function updateOrderRefundStatus(orderNumber: string): Order | null {
 
   // 自動收回權限，杜絕退款後仍可無償觀看之漏洞
   revokeUserTier(orders[idx].userId, orders[idx].userEmail, orders[idx].tier);
+
+  return orders[idx];
+}
+
+// 刪除訂單（或退款作廢徹底清除）
+export function deleteOrder(orderNumber: string, revokeTier: boolean = true): boolean {
+  let orders = getOrders();
+  const target = orders.find((o) => o.orderNumber === orderNumber);
+  if (!target) return false;
+
+  if (revokeTier && target.status === 'paid') {
+    revokeUserTier(target.userId, target.userEmail, target.tier);
+  }
+
+  orders = orders.filter((o) => o.orderNumber !== orderNumber);
+  safeWriteFileSync(ORDERS_FILE, orders);
+  return true;
+}
+
+// 修改訂單內容（包含方案、金額、狀態、發票抬頭統編與備註）
+export function updateOrderDetails(
+  orderNumber: string,
+  params: {
+    amount?: number;
+    tier?: UnlockTier;
+    tierName?: string;
+    status?: 'paid' | 'pending' | 'failed' | 'refunded';
+    paymentMethod?: Order['paymentMethod'];
+    invoice?: Partial<InvoiceInfo>;
+    note?: string;
+  }
+): Order | null {
+  const orders = getOrders();
+  const idx = orders.findIndex((o) => o.orderNumber === orderNumber);
+  if (idx === -1) return null;
+
+  const prevStatus = orders[idx].status;
+
+  if (params.amount !== undefined) orders[idx].amount = Number(params.amount);
+  if (params.tier !== undefined) orders[idx].tier = params.tier;
+  if (params.tierName !== undefined) orders[idx].tierName = params.tierName;
+  if (params.paymentMethod !== undefined) orders[idx].paymentMethod = params.paymentMethod;
+  if (params.status !== undefined) orders[idx].status = params.status;
+  if (params.note !== undefined) orders[idx].note = params.note;
+
+  if (params.invoice) {
+    orders[idx].invoice = {
+      ...(orders[idx].invoice || {
+        type: 'personal',
+        recipientName: '',
+        recipientPhone: '',
+        postalCode: '',
+        address: '',
+        status: 'pending',
+      }),
+      ...params.invoice,
+    };
+  }
+
+  safeWriteFileSync(ORDERS_FILE, orders);
+
+  // 狀態變更連動權限
+  if (params.status === 'paid' && prevStatus !== 'paid') {
+    unlockUserTier(orders[idx].userId, orders[idx].userEmail, orders[idx].tier);
+  } else if (params.status === 'refunded' && prevStatus === 'paid') {
+    revokeUserTier(orders[idx].userId, orders[idx].userEmail, orders[idx].tier);
+  }
 
   return orders[idx];
 }

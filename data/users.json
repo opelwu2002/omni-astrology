@@ -1,46 +1,39 @@
 [
   {
-    "id": "admin-master-001",
-    "email": "admin@omni-astrology.com",
-    "passwordHash": "$2b$10$gI5VlqXhNdNALVp1.OSHI.aFNnz/waxl3/XkWhupz7n8WXsty1zGy",
-    "name": "系統最高管理員",
-    "role": "admin",
-    "status": "active",
-    "createdAt": 1786868793061,
-    "lastLoginAt": 1789529341654
-  },
-  {
-    "id": "user-sample-002",
-    "email": "vip@omni-astrology.com",
-    "passwordHash": "$2b$10$YnZpvphI6UcShjCcAVTRMugrMLAKXSlRxysu9S3z7qb1QHqY0h.K.",
-    "name": "陳雅婷 VIP",
+    "id": "user-1789565978547-v7nxp",
+    "email": "peirung1121@gmail.com",
+    "passwordHash": "$2b$10$jj7RPsSejFFmYugAr4jIJOKPlsdMMVSmjWPLxrwU2I/ayj1xPZdE6",
+    "name": "吳沛融",
     "role": "user",
     "status": "active",
-    "createdAt": 1788855993061,
-    "lastLoginAt": 1789457193061
+    "phone": "0911027688",
+    "company": "中山女中",
+    "taxId": "00000000",
+    "industry": "學校或研究單位",
+    "address": "台北市松山區敦化北路165巷16號3樓",
+    "unlockedTiers": [
+      "free",
+      "level2",
+      "synastry_addon",
+      "level3"
+    ],
+    "createdAt": 1789565978547,
+    "lastLoginAt": 1789565978547
   },
   {
     "id": "user-1789518932653-wba48",
     "email": "opelwu2002@gmail.com",
     "passwordHash": "$2b$10$DfBfP/p6oDTS/fi2AVbgLOPNtxDWJIo9rogtPSFp32IpOIvw/DmXq",
     "name": "吳俊彥",
-    "role": "user",
+    "role": "admin",
     "status": "active",
     "createdAt": 1789518932653,
     "unlockedTiers": [
       "free",
       "level2",
-      "level3"
+      "level3",
+      "synastry_addon"
     ],
     "lastLoginAt": 1789534958686
-  },
-  {
-    "id": "user-1789534817649-jdbso",
-    "email": "google.user@vip-omni.com",
-    "passwordHash": "$2b$10$J7.3m3Mko6zHYCTXVzlaf.i8KmkpuqJ84rtJaCdBDF/6gRfXtrlKK",
-    "name": "Google命主體驗用戶",
-    "role": "user",
-    "status": "active",
-    "createdAt": 1789534817649
   }
 ]

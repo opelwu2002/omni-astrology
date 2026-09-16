@@ -94,17 +94,9 @@ export default function HomePage() {
     // 檢查 URL 回調參數
     if (typeof window !== 'undefined') {
       const searchParams = new URLSearchParams(window.location.search);
-      const isGoogleLogin = searchParams.get('login_success') === 'google';
       const isPaymentSuccess = searchParams.get('payment_success') === 'true';
 
-      if (isGoogleLogin) {
-        checkAuth();
-        setToastNotification({
-          type: 'success',
-          message: '✓ Google 帳號授權登入成功！已為您同步雲端命盤與會員專屬權益。',
-        });
-        window.history.replaceState({}, document.title, window.location.pathname);
-      } else if (isPaymentSuccess) {
+      if (isPaymentSuccess) {
         const orderNo = searchParams.get('orderNo');
         const tier = searchParams.get('tier') || 'level2';
         try {

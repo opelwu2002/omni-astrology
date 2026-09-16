@@ -12,6 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import bcrypt from 'bcryptjs';
 import { getSupabaseAdmin } from './db/supabase';
+import { upsertUser } from './db';
 
 export interface AuthUser {
   id: string;
@@ -20,6 +21,11 @@ export interface AuthUser {
   name: string;
   role: 'user' | 'admin';
   status: 'active' | 'suspended';
+  phone?: string;
+  company?: string;
+  taxId?: string;
+  industry?: string;
+  address?: string;
   unlockedTiers: string[];
   createdAt: number;
   lastLoginAt?: number;
@@ -29,12 +35,12 @@ export interface AuthUser {
 
 export type SafeAuthUser = Omit<AuthUser, 'passwordHash'>;
 
-// 系統預設最高管理者身分
+// 系統預設最高管理者身分（正式由 opelwu2002@gmail.com 吳俊彥擔任）
 const MASTER_ADMIN_USER: AuthUser = {
   id: 'admin-master-001',
-  email: 'admin@omni-astrology.com',
+  email: 'opelwu2002@gmail.com',
   passwordHash: bcrypt.hashSync('Opel6439', 10),
-  name: '系統最高管理員',
+  name: '吳俊彥',
   role: 'admin',
   status: 'active',
   unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],
@@ -65,14 +71,25 @@ function initializeUsers(): void {
       for (const u of jsonUsers) {
         if (!u.email) continue;
         const cleanEmail = u.email.trim().toLowerCase();
+        // 徹底排除舊管理員 admin@omni-astrology.com
+        if (cleanEmail === 'admin@omni-astrology.com') continue;
+
+        const isMaster = cleanEmail === 'opelwu2002@gmail.com';
         inMemoryUsers.set(cleanEmail, {
           id: u.id || `user-${Date.now()}`,
           email: cleanEmail,
           passwordHash: u.passwordHash || '',
-          name: u.name || cleanEmail.split('@')[0],
-          role: u.role === 'admin' ? 'admin' : 'user',
+          name: isMaster ? '吳俊彥' : u.name || cleanEmail.split('@')[0],
+          role: isMaster ? 'admin' : u.role === 'admin' ? 'admin' : 'user',
           status: u.status === 'suspended' ? 'suspended' : 'active',
-          unlockedTiers: Array.isArray(u.unlockedTiers)
+          phone: u.phone,
+          company: u.company,
+          taxId: u.taxId,
+          industry: u.industry,
+          address: u.address,
+          unlockedTiers: isMaster
+            ? ['free', 'level2', 'level3', 'synastry_addon']
+            : Array.isArray(u.unlockedTiers)
             ? u.unlockedTiers
             : u.role === 'admin'
             ? ['free', 'level2', 'level3', 'synastry_addon']
@@ -104,9 +121,9 @@ export function findAuthUserByEmailSync(email: string): AuthUser | undefined {
   initializeUsers();
   const clean = email.trim().toLowerCase();
 
-  // 管理者帳號別名比對
-  if (clean === 'admin' || clean === 'admin@omni-astrology.com') {
-    return inMemoryUsers.get('admin@omni-astrology.com');
+  // 管理者帳號別名比對（輸入 admin 或 opelwu2002@gmail.com 均回傳最高管理者）
+  if (clean === 'admin' || clean === 'opelwu2002@gmail.com') {
+    return inMemoryUsers.get('opelwu2002@gmail.com') || MASTER_ADMIN_USER;
   }
 
   return inMemoryUsers.get(clean);
@@ -120,8 +137,8 @@ export async function findAuthUserByEmail(email: string): Promise<AuthUser | und
   const clean = email.trim().toLowerCase();
 
   // 1. 最高管理者優先硬編碼放行
-  if (clean === 'admin' || clean === 'admin@omni-astrology.com') {
-    return inMemoryUsers.get('admin@omni-astrology.com');
+  if (clean === 'admin' || clean === 'opelwu2002@gmail.com') {
+    return inMemoryUsers.get('opelwu2002@gmail.com') || MASTER_ADMIN_USER;
   }
 
   // 2. 嘗試自雲端 Supabase 查詢最新狀態
@@ -194,10 +211,10 @@ export async function verifyUserCredentials(
   // 1. 【最高管理者硬性優先判定】
   if (
     (inputUser.toLowerCase() === 'admin' ||
-      inputUser.toLowerCase() === 'admin@omni-astrology.com') &&
+      inputUser.toLowerCase() === 'opelwu2002@gmail.com') &&
     inputPass === 'Opel6439'
   ) {
-    const admin = inMemoryUsers.get('admin@omni-astrology.com') || MASTER_ADMIN_USER;
+    const admin = inMemoryUsers.get('opelwu2002@gmail.com') || MASTER_ADMIN_USER;
     admin.lastLoginAt = Date.now();
     return { success: true, user: toSafeAuthUser(admin) };
   }
@@ -338,6 +355,11 @@ export async function createAuthUser(params: {
   email: string;
   password: string;
   name?: string;
+  phone?: string;
+  company?: string;
+  taxId?: string;
+  industry?: string;
+  address?: string;
 }): Promise<SafeAuthUser> {
   initializeUsers();
   const cleanEmail = params.email.trim().toLowerCase();
@@ -358,6 +380,11 @@ export async function createAuthUser(params: {
     name: params.name || cleanEmail.split('@')[0],
     role: 'user',
     status: 'active',
+    phone: params.phone,
+    company: params.company,
+    taxId: params.taxId,
+    industry: params.industry,
+    address: params.address,
     unlockedTiers: ['free'],
     createdAt: Date.now(),
     lastLoginAt: Date.now(),
@@ -365,6 +392,28 @@ export async function createAuthUser(params: {
   };
 
   inMemoryUsers.set(cleanEmail, newUser);
+
+  // 同步寫入 users.json 儲存庫，徹底修復新註冊會員與後台名單脫鉤的問題！
+  try {
+    upsertUser({
+      id: newUser.id,
+      email: newUser.email,
+      passwordHash: newUser.passwordHash,
+      name: newUser.name,
+      role: newUser.role,
+      status: newUser.status,
+      phone: newUser.phone,
+      company: newUser.company,
+      taxId: newUser.taxId,
+      industry: newUser.industry,
+      address: newUser.address,
+      unlockedTiers: ['free'],
+      createdAt: newUser.createdAt,
+      lastLoginAt: newUser.lastLoginAt,
+    });
+  } catch (err: any) {
+    console.warn('[auth-users] 同步寫入 users.json 容錯通知:', err?.message);
+  }
 
   // 同步寫入雲端 Supabase（若有配置）
   const supabase = getSupabaseAdmin();
@@ -377,6 +426,11 @@ export async function createAuthUser(params: {
         name: newUser.name,
         role: newUser.role,
         status: newUser.status,
+        phone: newUser.phone,
+        company: newUser.company,
+        tax_id: newUser.taxId,
+        industry: newUser.industry,
+        address: newUser.address,
         unlocked_tiers: newUser.unlockedTiers,
         provider: newUser.provider,
         created_at: newUser.createdAt,
@@ -397,4 +451,71 @@ export function getAllSafeAuthUsers(): SafeAuthUser[] {
   initializeUsers();
   return Array.from(inMemoryUsers.values()).map(toSafeAuthUser);
 }
+
+/**
+ * 永久刪除認證會員（同步自記憶體與雲端移除）
+ */
+export function deleteAuthUser(idOrEmail: string): void {
+  initializeUsers();
+  const target = (idOrEmail || '').trim().toLowerCase();
+  if (!target) return;
+
+  for (const [email, user] of inMemoryUsers.entries()) {
+    if (
+      user.id === idOrEmail ||
+      user.id.toLowerCase() === target ||
+      email === target
+    ) {
+      // 絕對保護系統最高管理者 opelwu2002@gmail.com
+      if (user.role === 'admin' || user.id === 'admin-master-001' || email === 'opelwu2002@gmail.com') {
+        continue;
+      }
+      inMemoryUsers.delete(email);
+    }
+  }
+
+  // 同步刪除 Supabase 雲端資料庫（若有配置）
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    try {
+      supabase
+        .from('users')
+        .delete()
+        .or(`id.eq.${idOrEmail},email.eq.${target}`)
+        .then(() => {});
+    } catch {}
+  }
+}
+
+/**
+ * 即時同步更新認證層會員的解鎖方案 (unlockedTiers)
+ */
+export function updateAuthUserTiers(idOrEmail: string, tiers: string[]): void {
+  initializeUsers();
+  const target = (idOrEmail || '').trim().toLowerCase();
+  if (!target) return;
+
+  for (const [email, user] of inMemoryUsers.entries()) {
+    if (
+      user.id === idOrEmail ||
+      user.id.toLowerCase() === target ||
+      email === target
+    ) {
+      user.unlockedTiers = Array.isArray(tiers) ? [...tiers] : ['free'];
+      inMemoryUsers.set(email, user);
+    }
+  }
+
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    try {
+      supabase
+        .from('users')
+        .update({ unlocked_tiers: tiers })
+        .or(`id.eq.${idOrEmail},email.eq.${target}`)
+        .then(() => {});
+    } catch {}
+  }
+}
+
 

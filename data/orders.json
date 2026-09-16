@@ -1,50 +1,60 @@
 [
   {
-    "id": "ord-1789519464183-Z9RW",
-    "orderNumber": "ORD-20260916-Z9RW",
-    "userId": "user-1789518932653-wba48",
-    "userEmail": "opelwu2002@gmail.com",
-    "tier": "level3",
-    "tierName": "高階終身全盤與未來三年流年時間線",
-    "amount": 699,
-    "paymentMethod": "line_pay",
-    "status": "paid",
-    "createdAt": 1789519464183
-  },
-  {
-    "id": "ord-1789519455190-WUXC",
-    "orderNumber": "ORD-20260916-WUXC",
-    "userId": "user-1789518932653-wba48",
-    "userEmail": "opelwu2002@gmail.com",
+    "id": "ord-1789566260849-MGCR",
+    "orderNumber": "ORD20260916MGCR",
+    "userId": "user-1789565978547-v7nxp",
+    "userEmail": "peirung1121@gmail.com",
     "tier": "level2",
     "tierName": "初階人生痛點解鎖報告（事業財富・情感健康）",
     "amount": 199,
-    "paymentMethod": "line_pay",
-    "status": "paid",
-    "createdAt": 1789519455190
+    "paymentMethod": "ecpay",
+    "status": "pending",
+    "createdAt": 1789566260849,
+    "invoice": {
+      "type": "individual",
+      "buyerTitle": "",
+      "taxId": "",
+      "recipientName": "吳沛融",
+      "recipientPhone": "0911027688",
+      "postalCode": "100",
+      "address": "台北市松山區敦化北路165巷16號3樓",
+      "status": "pending"
+    }
   },
   {
-    "id": "ord-init-001",
-    "orderNumber": "ORD-20260910-8831",
-    "userId": "user-sample-002",
-    "userEmail": "vip@omni-astrology.com",
-    "tier": "level3",
-    "tierName": "高階終身全盤與三年運勢曲線報告",
-    "amount": 699,
-    "paymentMethod": "line_pay",
-    "status": "paid",
-    "createdAt": 1789087455189
-  },
-  {
-    "id": "ord-init-002",
-    "orderNumber": "ORD-20260912-4521",
-    "userId": "user-sample-002",
-    "userEmail": "vip@omni-astrology.com",
+    "id": "ord-1789565863674-WRKF",
+    "orderNumber": "ORD20260916WRKF",
+    "userId": "test-pending-user",
+    "userEmail": "pending@test.com",
     "tier": "level2",
-    "tierName": "初階事業與情感財富深度解析",
+    "tierName": "初階解析報告",
     "amount": 199,
-    "paymentMethod": "credit_card",
-    "status": "paid",
-    "createdAt": 1789260255189
+    "paymentMethod": "ecpay",
+    "status": "pending",
+    "createdAt": 1789565863674
+  },
+  {
+    "id": "ord-1789564671130-TSPO",
+    "orderNumber": "ORD20260916TSPO",
+    "userId": "test-pending-user",
+    "userEmail": "pending@test.com",
+    "tier": "level2",
+    "tierName": "初階解析報告",
+    "amount": 199,
+    "paymentMethod": "ecpay",
+    "status": "pending",
+    "createdAt": 1789564671130
+  },
+  {
+    "id": "ord-1789564526295-4UEI",
+    "orderNumber": "ORD202609164UEI",
+    "userId": "test-pending-user",
+    "userEmail": "pending@test.com",
+    "tier": "level2",
+    "tierName": "初階解析報告",
+    "amount": 199,
+    "paymentMethod": "ecpay",
+    "status": "pending",
+    "createdAt": 1789564526295
   }
 ]

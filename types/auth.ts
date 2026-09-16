@@ -16,6 +16,11 @@ export interface User {
   name: string;
   role: UserRole;
   status: UserStatus;
+  phone?: string; // 連絡電話 (手機/分機)
+  company?: string; // 服務公司 / 機構名稱
+  taxId?: string; // 公司統一編號 8 碼
+  industry?: string; // 所屬行業分類 (環境部氣候變遷署七大行業)
+  address?: string; // 連絡通訊地址 (寄送發票與憑證)
   unlockedTiers?: UnlockTier[];
   createdAt: number;
   lastLoginAt?: number;
@@ -27,9 +32,26 @@ export interface UserSafe {
   name: string;
   role: UserRole;
   status: UserStatus;
+  phone?: string;
+  company?: string;
+  taxId?: string;
+  industry?: string;
+  address?: string;
   unlockedTiers?: UnlockTier[];
   createdAt: number;
   lastLoginAt?: number;
+}
+
+// 企業級新會員註冊參數
+export interface RegisterParams {
+  name: string;
+  email: string;
+  password: string;
+  phone: string;
+  company?: string;
+  taxId?: string;
+  industry: string;
+  address: string;
 }
 
 export interface UserProfileStorage {

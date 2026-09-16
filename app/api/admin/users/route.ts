@@ -8,6 +8,7 @@ import {
   deleteUser,
   addAuditLog,
 } from '@/lib/db';
+import { deleteAuthUser, updateAuthUserTiers } from '@/lib/auth-users';
 
 // 取得所有會員清單
 export async function GET(request: Request) {
@@ -119,6 +120,11 @@ export async function PATCH(request: Request) {
       unlockedTiers,
     });
 
+    // 即時同步至認證層快取
+    if (unlockedTiers) {
+      updateAuthUserTiers(targetUserId, unlockedTiers);
+    }
+
     // 判斷日誌類型
     const detailParts: string[] = [];
     if (name) detailParts.push(`姓名更新為「${name}」`);
@@ -170,15 +176,17 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // 防止管理員刪除自己
-    if (targetUserId === user.id) {
+    // 防止管理員刪除自己或系統最高管理者
+    if (targetUserId === user.id || targetUserId === 'admin-master-001') {
       return NextResponse.json(
-        { success: false, error: '無法刪除當前登入之管理員帳號' },
+        { success: false, error: '無法刪除當前登入或系統最高管理員帳號' },
         { status: 400 }
       );
     }
 
-    deleteUser(targetUserId);
+    // 同步自所有儲存庫（記憶體、檔案、雲端）徹底移除
+    deleteAuthUser(targetUserId);
+    const updatedUsers = deleteUser(targetUserId);
 
     addAuditLog({
       adminId: user.id,
@@ -186,10 +194,14 @@ export async function DELETE(request: Request) {
       action: 'user_suspend',
       targetId: targetUserId,
       targetType: 'user',
-      details: `永久刪除會員 ID: ${targetUserId}`,
+      details: `永久刪除會員 ID/Email: ${targetUserId}`,
     });
 
-    return NextResponse.json({ success: true, message: '會員已成功刪除！' });
+    return NextResponse.json({
+      success: true,
+      message: '會員已成功刪除！',
+      users: updatedUsers,
+    });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error?.message || '刪除失敗' },
