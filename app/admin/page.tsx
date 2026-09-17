@@ -141,6 +141,7 @@ export default function AdminPage() {
   const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserSafe | null>(null);
+  const [isSavingUser, setIsSavingUser] = useState(false);
 
   const [isCreateOrderModalOpen, setIsCreateOrderModalOpen] = useState(false);
   const [isEditOrderAmountModalOpen, setIsEditOrderAmountModalOpen] = useState(false);
@@ -579,44 +580,66 @@ export default function AdminPage() {
   // 儲存編輯會員
   const handleSaveEditUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token || !editingUser) return;
+    if (!editingUser) return;
+
+    // 雙重備援獲取權杖
+    const authToken =
+      token ||
+      (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : '') ||
+      '';
+
+    if (editUserData.password.trim().length > 0 && editUserData.password.trim().length < 6) {
+      showFeedback('error', '重設之密碼長度至少需 6 個字元');
+      alert('重設之密碼長度至少需 6 個字元');
+      return;
+    }
+
     try {
+      setIsSavingUser(true);
       const payload: any = {
         targetUserId: editingUser.id,
+        id: editingUser.id,
         name: editUserData.name,
         role: editUserData.role,
         status: editUserData.status,
         unlockedTiers: editUserData.unlockedTiers,
       };
-      if (editUserData.password.trim().length > 0) {
-        if (editUserData.password.trim().length < 6) {
-          showFeedback('error', '重設之密碼至少需 6 碼');
-          return;
-        }
+      if (editUserData.password.trim().length >= 6) {
         payload.password = editUserData.password.trim();
       }
 
-      const res = await fetch('/api/admin/users', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+      }
+
+      const res = await fetch('/api/admin/users/update', {
+        method: 'PUT',
+        headers,
         body: JSON.stringify(payload),
       });
+
       const data = await res.json();
-      if (data.success) {
-        showFeedback('success', `會員「${data.user.name}」資料更新成功！`);
-        setIsEditUserModalOpen(false);
+      if (res.ok && data.success) {
+        showFeedback('success', `會員「${data.user?.name || editUserData.name}」資料更新成功！`);
+        setIsEditUserModalOpen(false); // 成功後立即關閉 Modal
         setEditingUser(null);
-        fetchUsers();
-        fetchStats();
-        fetchAuditLogs();
+        fetchUsers();   // 重新整理後台會員清單
+        fetchStats();   // 重新整理後台統計數據
+        fetchAuditLogs(); // 重新整理稽核日誌
       } else {
-        showFeedback('error', data.error || '更新會員失敗');
+        const errMsg = data.error || '儲存失敗';
+        showFeedback('error', errMsg);
+        alert(errMsg);
       }
-    } catch {
-      showFeedback('error', '網路連線異常');
+    } catch (err: any) {
+      console.error('[handleSaveEditUser] 儲存會員異常:', err);
+      showFeedback('error', '網路異常或系統錯誤');
+      alert('網路異常或系統錯誤，請稍後再試');
+    } finally {
+      setIsSavingUser(false);
     }
   };
 
@@ -3000,16 +3023,25 @@ export default function AdminPage() {
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
                 <button
                   type="button"
+                  disabled={isSavingUser}
                   onClick={() => setIsEditUserModalOpen(false)}
-                  className="px-3.5 py-1.5 rounded-xl border border-slate-700 text-slate-400 hover:text-white text-xs"
+                  className="px-3.5 py-1.5 rounded-xl border border-slate-700 text-slate-400 hover:text-white text-xs disabled:opacity-50"
                 >
                   取消
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow"
+                  disabled={isSavingUser}
+                  className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  儲存變更
+                  {isSavingUser ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>儲存中...</span>
+                    </>
+                  ) : (
+                    <span>儲存變更</span>
+                  )}
                 </button>
               </div>
             </form>

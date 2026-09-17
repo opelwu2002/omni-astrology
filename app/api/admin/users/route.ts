@@ -6,6 +6,7 @@ import {
   createAuthUser,
   deleteAuthUserAsync,
   updateAuthUserTiers,
+  updateAuthUserData,
   findAuthUserByEmail,
   toSafeAuthUser,
 } from '@/lib/auth-users';
@@ -210,9 +211,18 @@ export async function PATCH(request: Request) {
     }
 
     // 3. 同步記憶體快取
-    if (unlockedTiers) {
-      updateAuthUserTiers(targetUserId, unlockedTiers);
-    }
+    updateAuthUserData(targetUserId, {
+      name: foundUser.name,
+      role: foundUser.role,
+      status: foundUser.status,
+      phone: foundUser.phone,
+      company: foundUser.company,
+      taxId: foundUser.taxId,
+      industry: foundUser.industry,
+      address: foundUser.address,
+      unlockedTiers: foundUser.unlockedTiers,
+      passwordHash: foundUser.passwordHash,
+    });
 
     const safeUser = toSafeAuthUser(foundUser);
 
@@ -308,3 +318,6 @@ export async function DELETE(request: Request) {
     );
   }
 }
+
+// 支援 PUT 方法映射至 PATCH
+export const PUT = PATCH;

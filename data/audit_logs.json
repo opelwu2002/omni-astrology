@@ -1,5 +1,25 @@
 [
   {
+    "id": "audit-1789632347856-3ucmy",
+    "timestamp": 1789632347856,
+    "adminId": "admin-master-001",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "user_update",
+    "targetId": "user-1789632347833-y5whj",
+    "targetType": "user",
+    "details": "更新會員 edit.member.1789632347660@example.com 資料：姓名更新為「更新後尊榮會員」、狀態設為「active」、解鎖權限調整為 [free, level2, level3]"
+  },
+  {
+    "id": "audit-1789632290199-v2ovf",
+    "timestamp": 1789632290199,
+    "adminId": "admin-master-001",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "user_update",
+    "targetId": "user-1789632290176-nr1zs",
+    "targetType": "user",
+    "details": "更新會員 edit.member.1789632290028@example.com 資料：姓名更新為「更新後尊榮會員」、狀態設為「active」、解鎖權限調整為 [free, level2, level3]"
+  },
+  {
     "id": "audit-1789566384381-291za",
     "timestamp": 1789566384381,
     "adminId": "user-1789518932653-wba48",

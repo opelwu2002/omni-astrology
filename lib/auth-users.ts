@@ -529,3 +529,39 @@ export function updateAuthUserTiers(idOrEmail: string, tiers: string[]): void {
     });
   }
 }
+
+/**
+ * 即時同步更新認證層會員的多個欄位資料至記憶體快取
+ */
+export function updateAuthUserData(
+  idOrEmail: string,
+  updateData: Partial<Pick<AuthUser, 'name' | 'role' | 'status' | 'phone' | 'company' | 'taxId' | 'industry' | 'address' | 'unlockedTiers' | 'passwordHash'>>
+): void {
+  initializeUsers();
+  const target = (idOrEmail || '').trim().toLowerCase();
+  if (!target) return;
+
+  for (const [email, user] of inMemoryUsers.entries()) {
+    if (
+      user.id === idOrEmail ||
+      (user.id && user.id.toLowerCase() === target) ||
+      email === target
+    ) {
+      if (updateData.name !== undefined) user.name = updateData.name;
+      if (updateData.role !== undefined) user.role = updateData.role;
+      if (updateData.status !== undefined) user.status = updateData.status;
+      if (updateData.phone !== undefined) user.phone = updateData.phone;
+      if (updateData.company !== undefined) user.company = updateData.company;
+      if (updateData.taxId !== undefined) user.taxId = updateData.taxId;
+      if (updateData.industry !== undefined) user.industry = updateData.industry;
+      if (updateData.address !== undefined) user.address = updateData.address;
+      if (updateData.unlockedTiers !== undefined) {
+        user.unlockedTiers = Array.isArray(updateData.unlockedTiers)
+          ? [...updateData.unlockedTiers]
+          : ['free'];
+      }
+      if (updateData.passwordHash !== undefined) user.passwordHash = updateData.passwordHash;
+      inMemoryUsers.set(email, user);
+    }
+  }
+}
