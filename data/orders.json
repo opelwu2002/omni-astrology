@@ -1,14 +1,1 @@
-[
-  {
-    "id": "ord-1789564526295-4UEI",
-    "orderNumber": "ORD202609164UEI",
-    "userId": "test-pending-user",
-    "userEmail": "pending@test.com",
-    "tier": "level2",
-    "tierName": "初階解析報告",
-    "amount": 199,
-    "paymentMethod": "ecpay",
-    "status": "pending",
-    "createdAt": 1789564526295
-  }
-]
+[]
