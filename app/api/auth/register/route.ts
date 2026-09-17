@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createAuthUser } from '@/lib/auth-users';
+import { createUser, findUserByEmail } from '@/lib/usersStorage';
 import { signToken, createPrivateJsonResponse } from '@/lib/auth';
 import { isValidTaiwanTaxId, isValidTaiwanPhone, CLIMATE_CHANGE_INDUSTRIES } from '@/lib/validators';
 
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. 所屬行業分類必填驗證 (環境部氣候變遷署七大行業)
+    // 3. 所屬行業分類必填驗證
     if (!industry || !CLIMATE_CHANGE_INDUSTRIES.includes(industry as any)) {
       return NextResponse.json(
         {
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 5. 統一編號選填驗證 (若填寫需做標準除以 10 驗證)
+    // 5. 統一編號選填驗證 (若填寫需做標準邏輯驗證)
     if (taxId && taxId.trim()) {
       if (!isValidTaiwanTaxId(taxId.trim())) {
         return NextResponse.json(
@@ -75,9 +75,20 @@ export async function POST(request: Request) {
       }
     }
 
-    // 6. 建立新會員（原子性寫入 GitHub 雲端資料庫/本地快取，必須確認成功且取回新產生之 user.id）
-    const user = await createAuthUser({
-      email: email.trim().toLowerCase(),
+    const cleanEmail = email.trim().toLowerCase();
+
+    // 6. 查重防護（直通全站單一資料存取核心）
+    const existing = await findUserByEmail(cleanEmail);
+    if (existing) {
+      return NextResponse.json(
+        { success: false, error: '此電子郵件已被註冊' },
+        { status: 400 }
+      );
+    }
+
+    // 7. 建立新會員（原子性持久化寫入，100% 直連 Single Source of Truth Service）
+    const user = await createUser({
+      email: cleanEmail,
       password,
       name: name.trim(),
       phone: phone.trim(),
@@ -94,7 +105,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 7. 真正寫入資料庫成功後，才簽發 JWT Token 與 Cookie
+    // 8. 真正寫入資料庫成功後，才簽發 JWT Token 與 Cookie
     const token = signToken({
       userId: user.id,
       email: user.email,

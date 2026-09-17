@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getSystemStats } from '@/lib/db';
-import { getAllAuthUsersAsync } from '@/lib/auth-users';
+import { getAllUsers } from '@/lib/usersStorage';
 
 export async function GET(request: Request) {
   try {
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     let adminCount = 0;
 
     try {
-      const users = await getAllAuthUsersAsync();
+      const users = await getAllUsers();
       if (Array.isArray(users)) {
         totalUsers = users.length;
         activeUsers = users.filter((u) => u.status === 'active').length;

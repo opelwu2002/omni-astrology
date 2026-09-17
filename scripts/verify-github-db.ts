@@ -48,19 +48,23 @@ async function runTests() {
   testAssert(config.filePath === 'data/users.json', `預設儲存路徑為 data/users.json (目前: ${config.filePath})`);
 
   // 【測試 2：幽靈資料過濾防線】
-  console.log('\n【測試 2：檢驗幽靈會員嚴密過濾機制】');
+  console.log('\n【測試 2：檢驗幽靈會員嚴密過濾機制（不誤殺真實用戶）】');
   const dirtyData = [
     { email: 'opelwu2002@gmail.com', name: '吳俊彥' },
-    { email: 'huang.kl@omni-enterprise.tw', name: '黃光隆' },
-    { email: 'test.ghost@gmail.com', name: '大隆精密工業測試' },
+    { email: 'huang.kl@omni-enterprise.tw', name: '假資料黃光隆' },
+    { email: 'kc7470@gmail.com', name: '黃光隆' },
     { email: 'admin@omni-astrology.com', name: '舊管理員' },
     { email: 'peirung1121@gmail.com', name: '吳沛融' },
   ];
   const cleaned = filterOutGhostUsers(dirtyData);
-  testAssert(cleaned.length === 2, `幽靈資料應被精準剔除剩餘 2 筆 (實際: ${cleaned.length})`);
+  testAssert(cleaned.length === 3, `幽靈資料應被精準剔除剩餘 3 筆 (實際: ${cleaned.length})`);
   testAssert(
-    !cleaned.some((u) => u.name.includes('黃光隆') || u.name.includes('大隆精密')),
-    '絕對禁止黃光隆或大隆精密進入資料陣列'
+    !cleaned.some((u) => u.email === 'huang.kl@omni-enterprise.tw' || u.email === 'admin@omni-astrology.com'),
+    '絕對禁止特定假 Email 進入資料陣列'
+  );
+  testAssert(
+    cleaned.some((u) => u.email === 'kc7470@gmail.com' && u.name === '黃光隆'),
+    '真實會員黃光隆（kc7470@gmail.com）必須被合法保留，絕不依姓名誤殺！'
   );
   testAssert(
     cleaned.some((u) => u.email === 'opelwu2002@gmail.com') &&

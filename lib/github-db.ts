@@ -61,21 +61,16 @@ export function isGitHubDbConfigured(): boolean {
 }
 
 /**
- * 幽靈資料與測試假資料過濾器（保證黃光隆等測試資料絕對不進入儲存庫）
+ * 歷史假資料過濾器（僅過濾特定舊版寫死之假 Email，絕不根據會員姓名誤殺真實會員）
  */
 export function filterOutGhostUsers<T extends { email?: string; name?: string }>(users: T[]): T[] {
   if (!Array.isArray(users)) return [];
   return users.filter((u) => {
     const cleanEmail = (u.email || '').trim().toLowerCase();
-    const cleanName = (u.name || '').trim();
 
+    // 僅過濾歷史寫死之假 Email
     if (cleanEmail === 'admin@omni-astrology.com') return false;
-    if (
-      cleanEmail.includes('huang.kl') ||
-      cleanEmail.includes('omni-enterprise.tw') ||
-      cleanName.includes('黃光隆') ||
-      cleanName.includes('大隆精密')
-    ) {
+    if (cleanEmail === 'huang.kl@omni-enterprise.tw' || cleanEmail.endsWith('@omni-enterprise.tw')) {
       return false;
     }
     return true;

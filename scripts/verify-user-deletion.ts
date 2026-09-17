@@ -115,10 +115,9 @@ async function runTests() {
   // 9. 驗證 users.json 磁碟檔案純淨無任何 Mock 假資料
   if (fs.existsSync(USERS_FILE)) {
     const finalDiskContent = fs.readFileSync(USERS_FILE, 'utf-8');
-    assert(!finalDiskContent.includes('黃光隆'), 'users.json 磁碟檔案嚴禁含有黃光隆');
-    assert(!finalDiskContent.includes('大隆精密'), 'users.json 磁碟檔案嚴禁含有大隆精密');
+    assert(!finalDiskContent.includes('huang.kl@omni-enterprise.tw'), 'users.json 磁碟檔案嚴禁含有假 Email huang.kl');
     assert(!finalDiskContent.includes('陳雅婷 VIP'), 'users.json 磁碟檔案嚴禁含有陳雅婷 VIP');
-    assert(!finalDiskContent.includes('huang.kl'), 'users.json 磁碟檔案嚴禁含有 huang.kl');
+    assert(!finalDiskContent.includes('admin@omni-astrology.com'), 'users.json 磁碟檔案嚴禁含有舊假管理者 Email');
   }
 
   // 10. 驗證 readUsersFromDisk()、getUsers() 與 getUsersAsync() 人數完全一致

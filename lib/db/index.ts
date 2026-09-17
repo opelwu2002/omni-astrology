@@ -102,17 +102,11 @@ function initUsers(): User[] {
       const content = fs.readFileSync(USERS_FILE, 'utf-8');
       let list: User[] = JSON.parse(content);
 
-      // 1. 徹底過濾刪除舊管理員與任何黃光隆/大隆精密工業等歷史假資料
+      // 1. 過濾刪除特定舊版寫死之假 Email
       list = list.filter((u) => {
         const clean = (u.email || '').toLowerCase();
-        const cleanName = (u.name || '');
         if (clean === 'admin@omni-astrology.com') return false;
-        if (
-          clean.includes('huang.kl') ||
-          clean.includes('omni-enterprise.tw') ||
-          cleanName.includes('黃光隆') ||
-          cleanName.includes('大隆精密')
-        ) {
+        if (clean === 'huang.kl@omni-enterprise.tw' || clean.endsWith('@omni-enterprise.tw')) {
           return false;
         }
         return true;
@@ -301,17 +295,11 @@ export function readUsersFromDisk(): User[] {
       const content = fs.readFileSync(USERS_FILE, 'utf-8');
       let list: User[] = JSON.parse(content);
       if (Array.isArray(list)) {
-        // 嚴格黑名單過濾
+        // 過濾特定舊版寫死之假 Email
         list = list.filter((u) => {
           const clean = (u.email || '').toLowerCase();
-          const cleanName = (u.name || '');
           if (clean === 'admin@omni-astrology.com') return false;
-          if (
-            clean.includes('huang.kl') ||
-            clean.includes('omni-enterprise.tw') ||
-            cleanName.includes('黃光隆') ||
-            cleanName.includes('大隆精密')
-          ) {
+          if (clean === 'huang.kl@omni-enterprise.tw' || clean.endsWith('@omni-enterprise.tw')) {
             return false;
           }
           return true;
@@ -371,9 +359,7 @@ export async function getUsersAsync(): Promise<User[]> {
         if (!cleanEmail || cleanEmail === 'admin@omni-astrology.com') continue;
         if (
           cleanEmail.includes('huang.kl') ||
-          cleanEmail.includes('omni-enterprise.tw') ||
-          cleanName.includes('黃光隆') ||
-          cleanName.includes('大隆精密')
+          cleanEmail.includes('omni-enterprise.tw')
         ) {
           continue;
         }
@@ -435,13 +421,10 @@ export function saveUsers(users: User[]): void {
 
   const cleanUsers = users.filter((u) => {
     const clean = (u.email || '').toLowerCase();
-    const cleanName = (u.name || '');
     return (
       clean !== 'admin@omni-astrology.com' &&
       !clean.includes('huang.kl') &&
-      !clean.includes('omni-enterprise.tw') &&
-      !cleanName.includes('黃光隆') &&
-      !cleanName.includes('大隆精密')
+      !clean.includes('omni-enterprise.tw')
     );
   });
 

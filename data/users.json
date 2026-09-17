@@ -37,5 +37,23 @@
     "createdAt": 1789565978547,
     "lastLoginAt": 1789565978547,
     "provider": "credentials"
+  },
+  {
+    "id": "user-1789640969250-pyt9x",
+    "email": "kc7470@gmail.com",
+    "passwordHash": "$2b$10$RtMuiOrMeCgQtjNrQ4X8zecnrnsuravaicPAwFmNvkJmRCJ193gAK",
+    "name": "黃光隆",
+    "role": "user",
+    "status": "active",
+    "phone": "0988776655",
+    "company": "大隆工業",
+    "industry": "製造業",
+    "address": "台中市西屯區工業區一路",
+    "unlockedTiers": [
+      "free"
+    ],
+    "createdAt": 1789640969250,
+    "lastLoginAt": 1789640969250,
+    "provider": "credentials"
   }
 ]
