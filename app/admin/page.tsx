@@ -910,12 +910,19 @@ export default function AdminPage() {
     if (!confirm(confirmMsg)) return;
 
     try {
-      const res = await fetch(`/api/admin/orders?orderNumber=${order.orderNumber}`, {
+      const res = await fetch(`/api/admin/orders?orderNumber=${order.orderNumber}&id=${order.id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (data.success) {
+        // 關鍵：立刻從前端 State 移除該項目，徹底消除畫面殘留與幽靈訂單
+        setOrdersList((prev) =>
+          prev.filter((o) => o.orderNumber !== order.orderNumber && o.id !== order.id)
+        );
+        setInvoicesList((prev) =>
+          prev.filter((o) => o.orderNumber !== order.orderNumber && o.id !== order.id)
+        );
         showFeedback('success', `訂單 ${order.orderNumber} 已成功刪除作廢！`);
         fetchOrders();
         fetchUsers();
@@ -927,6 +934,36 @@ export default function AdminPage() {
       }
     } catch {
       showFeedback('error', '網路異常，無法刪除訂單');
+    }
+  };
+
+  // 紙本發票操作：作廢 / 刪除發票單據
+  const handleDeleteInvoice = async (order: Order) => {
+    if (!token) return;
+    const confirmMsg = `確定要作廢並刪除訂單「${order.orderNumber}」的紙本發票物流單據嗎？\n\n此動作將自系統中清除該筆紙本寄送資料。`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      const res = await fetch(`/api/admin/invoices?orderNumber=${order.orderNumber}&id=${order.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        // 關鍵：立刻自發票清單 State 移出，同步扣減徽章數量
+        setInvoicesList((prev) =>
+          prev.filter((o) => o.orderNumber !== order.orderNumber && o.id !== order.id)
+        );
+        showFeedback('success', `訂單 ${order.orderNumber} 的紙本發票物流單據已成功作廢刪除！`);
+        fetchInvoices();
+        fetchOrders();
+        fetchStats();
+        fetchAuditLogs();
+      } else {
+        showFeedback('error', data.error || '作廢發票單失敗');
+      }
+    } catch {
+      showFeedback('error', '網路連線異常，無法刪除發票單據');
     }
   };
 
@@ -2384,6 +2421,15 @@ export default function AdminPage() {
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                             <span>✏️ 修改收件資料</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteInvoice(order)}
+                            className="px-3 py-2 bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white text-xs font-semibold rounded-xl border border-rose-500/30 transition flex items-center justify-center gap-1 shadow-sm"
+                            title="作廢並刪除此筆紙本發票物流單據"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>作廢刪除</span>
                           </button>
 
                           {inv.status === 'pending' && (

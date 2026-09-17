@@ -1,5 +1,35 @@
 [
   {
+    "id": "audit-1789648122121-z2luu",
+    "timestamp": 1789648122121,
+    "adminId": "admin-master-001",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "order_refund",
+    "targetId": "MAN202609171SA9",
+    "targetType": "order",
+    "details": "管理員永久刪除訂單：MAN202609171SA9，並同步更新 GitHub 倉庫 data/orders.json"
+  },
+  {
+    "id": "audit-1789648122106-pnr0e",
+    "timestamp": 1789648122106,
+    "adminId": "admin-master-001",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "invoice_status_change",
+    "targetId": "MAN202609171SA9",
+    "targetType": "invoice",
+    "details": "管理員作廢並刪除紙本發票物流單據：MAN202609171SA9，並同步更新 GitHub 倉庫"
+  },
+  {
+    "id": "audit-1789648122084-3zeyh",
+    "timestamp": 1789648122084,
+    "adminId": "admin-master-001",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "order_create_manual",
+    "targetId": "MAN202609171SA9",
+    "targetType": "order",
+    "details": "手動人工補單：客戶 order.sync.test@example.com，方案 初階個人解析 (199)，金額 NT$ 199，付款方式：manual，狀態：paid"
+  },
+  {
     "id": "audit-1789645583437-tm6h2",
     "timestamp": 1789645583437,
     "adminId": "admin-master-001",

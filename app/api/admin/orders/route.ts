@@ -9,11 +9,16 @@ import {
   updateOrderDetails,
   updateInvoiceData,
   deleteOrder,
+  revokeUserTier,
   addAuditLog,
 } from '@/lib/db';
 import { UnlockTier, InvoiceInfo } from '@/types/auth';
+import { getFileFromGitHub, saveFileToGitHub } from '@/lib/github-db';
 
-// 取得所有訂單清單
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+// 取得所有訂單清單 (優先直讀 GitHub 倉庫 data/orders.json，降級讀取本機)
 export async function GET(request: Request) {
   try {
     const user = getCurrentUserFromRequest(request);
@@ -21,7 +26,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: '無管理員權限' }, { status: 403 });
     }
 
-    const orders = getOrders();
+    const { data: remoteOrders } = await getFileFromGitHub<any[]>('data/orders.json', []);
+    const orders = Array.isArray(remoteOrders) && remoteOrders.length > 0 ? remoteOrders : getOrders();
     return NextResponse.json({ success: true, orders });
   } catch (error: any) {
     return NextResponse.json(
@@ -80,6 +86,12 @@ export async function POST(request: Request) {
       details: `手動人工補單：客戶 ${newOrder.userEmail}，方案 ${newOrder.tierName}，金額 NT$ ${newOrder.amount}，付款方式：${newOrder.paymentMethod}，狀態：${newOrder.status}`,
     });
 
+    try {
+      await saveFileToGitHub('data/orders.json', getOrders(), `feat(orders): 新增人工補單 ${newOrder.orderNumber}`);
+    } catch (err: any) {
+      console.warn('[orders/post] GitHub 同步警示:', err?.message);
+    }
+
     return NextResponse.json({
       success: true,
       order: newOrder,
@@ -90,6 +102,15 @@ export async function POST(request: Request) {
       { success: false, error: error?.message || '建立訂單失敗' },
       { status: 400 }
     );
+  }
+}
+
+// 輔助函式：同步訂單變更至 GitHub 倉庫
+async function syncOrdersToGithub(commitMsg: string) {
+  try {
+    await saveFileToGitHub('data/orders.json', getOrders(), commitMsg);
+  } catch (err: any) {
+    console.warn('[orders/github-sync] GitHub 同步警示:', err?.message);
   }
 }
 
@@ -124,6 +145,8 @@ export async function PATCH(request: Request) {
         details: `訂單退款：已標記訂單 ${orderNumber} 為已退款，並自動收回會員 ${updated.userEmail} 之 ${updated.tier} 方案解鎖權限`,
       });
 
+      await syncOrdersToGithub(`chore(orders): 訂單 ${orderNumber} 退款作廢`);
+
       return NextResponse.json({
         success: true,
         order: updated,
@@ -147,6 +170,8 @@ export async function PATCH(request: Request) {
         details: `手動調整訂單 ${orderNumber} 狀態為「${status}」${status === 'paid' ? '（已自動同步解鎖權限）' : ''}`,
       });
 
+      await syncOrdersToGithub(`chore(orders): 訂單 ${orderNumber} 狀態變更為 ${status}`);
+
       return NextResponse.json({
         success: true,
         order: updated,
@@ -169,6 +194,8 @@ export async function PATCH(request: Request) {
         targetType: 'invoice',
         details: `修改訂單 ${orderNumber} 發票資訊：抬頭「${invoice.buyerTitle || '個人'}」，統編「${invoice.taxId || '無'}」，收件人「${invoice.recipientName}」`,
       });
+
+      await syncOrdersToGithub(`chore(orders): 更新訂單 ${orderNumber} 發票資訊`);
 
       return NextResponse.json({
         success: true,
@@ -201,6 +228,8 @@ export async function PATCH(request: Request) {
         details: `管理員完整修改訂單 ${orderNumber}：金額 NT$ ${amount || updated.amount}，方案 ${tierName || updated.tierName}，狀態 ${status || updated.status}`,
       });
 
+      await syncOrdersToGithub(`chore(orders): 完整編輯訂單 ${orderNumber}`);
+
       return NextResponse.json({
         success: true,
         order: updated,
@@ -228,6 +257,8 @@ export async function PATCH(request: Request) {
         details: `管理員修改訂單 ${orderNumber} 金額為 NT$ ${amount}${note ? `，備註：${note}` : ''}`,
       });
 
+      await syncOrdersToGithub(`chore(orders): 修改訂單 ${orderNumber} 金額為 NT$ ${amount}`);
+
       return NextResponse.json({
         success: true,
         order: updated,
@@ -244,7 +275,7 @@ export async function PATCH(request: Request) {
   }
 }
 
-// 刪除訂單 / 退款作廢
+// 刪除訂單 / 退款作廢 (100% 直連 GitHub Contents API 實體持久化抹除)
 export async function DELETE(request: Request) {
   try {
     const user = getCurrentUserFromRequest(request);
@@ -253,31 +284,75 @@ export async function DELETE(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const orderNumber = searchParams.get('orderNumber');
+    let orderId =
+      searchParams.get('orderNumber') ||
+      searchParams.get('id') ||
+      searchParams.get('orderId');
 
-    if (!orderNumber) {
-      return NextResponse.json({ success: false, error: '請提供訂單編號' }, { status: 400 });
+    if (!orderId) {
+      try {
+        const body = await request.json();
+        orderId = body.orderNumber || body.id || body.orderId;
+      } catch {
+        // 允許無 Request Body
+      }
     }
 
-    const success = deleteOrder(orderNumber, true);
-    if (!success) {
-      return NextResponse.json({ success: false, error: '找不到欲刪除的訂單' }, { status: 404 });
+    if (!orderId) {
+      return NextResponse.json({ success: false, error: '缺少訂單編號 (orderNumber 或 id)' }, { status: 400 });
     }
+
+    const targetId = orderId.trim();
+
+    // 1. 從 GitHub 取得最新訂單清單（降級本機）
+    const { data: remoteOrders } = await getFileFromGitHub<any[]>('data/orders.json', []);
+    const currentOrders = Array.isArray(remoteOrders) && remoteOrders.length > 0 ? remoteOrders : getOrders();
+
+    // 2. 尋找目標訂單，若為已付款則連動收回權限
+    const targetOrder = currentOrders.find(
+      (o: any) => o.orderNumber === targetId || o.id === targetId || o.orderId === targetId
+    );
+
+    if (targetOrder && targetOrder.status === 'paid') {
+      try {
+        revokeUserTier(targetOrder.userId, targetOrder.userEmail, targetOrder.tier);
+      } catch (err: any) {
+        console.warn('[orders/delete] 收回會員權限警示:', err?.message);
+      }
+    }
+
+    // 3. 嚴格過濾移除指定訂單
+    const updatedOrders = currentOrders.filter(
+      (o: any) => o.orderNumber !== targetId && o.id !== targetId && o.orderId !== targetId
+    );
+
+    // 4. 實體 commit 寫回 GitHub 倉庫
+    try {
+      await saveFileToGitHub('data/orders.json', updatedOrders, `chore: 刪除作廢訂單 ${targetId}`);
+    } catch (err: any) {
+      console.warn('[orders/delete] GitHub 倉庫同步警示:', err?.message);
+    }
+
+    // 5. 同步更新本機資料庫檔案
+    deleteOrder(targetId, false);
 
     addAuditLog({
       adminId: user.id,
       adminEmail: user.email,
       action: 'order_refund',
-      targetId: orderNumber,
+      targetId: targetId,
       targetType: 'order',
-      details: `管理員永久刪除訂單：${orderNumber}，並連動收回該會員對應等級權限`,
+      details: `管理員永久刪除訂單：${targetId}，並同步更新 GitHub 倉庫 data/orders.json`,
     });
 
     return NextResponse.json({
       success: true,
-      message: `訂單 ${orderNumber} 已成功刪除作廢，並連動收回相關權限！`,
+      remainingCount: updatedOrders.length,
+      orders: updatedOrders,
+      message: `訂單 ${targetId} 已成功刪除作廢，並同步更新雲端資料庫！`,
     });
   } catch (error: any) {
+    console.error('[orders/delete] 刪除訂單失敗:', error);
     return NextResponse.json(
       { success: false, error: error?.message || '刪除訂單失敗' },
       { status: 500 }

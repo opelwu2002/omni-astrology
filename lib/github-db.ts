@@ -470,3 +470,168 @@ export async function commitUsersToGithub(
     error: '已超過最大重試次數，提交失敗',
   };
 }
+
+/**
+ * 通用讀取 GitHub 檔案（支援 orders.json、invoices.json、users.json 等）
+ * 包含本機磁碟降級保護與高容錯 JSON 解析
+ */
+export async function getFileFromGitHub<T>(
+  filePath: string,
+  fallbackData: T
+): Promise<{ data: T; sha?: string }> {
+  const cleanPath = filePath.trim().replace(/^\/+/, '');
+  const { owner, repo } = getRepoInfo();
+  const headers = getHeaders();
+  const token = (
+    process.env.GITHUB_TOKEN ||
+    process.env.GITHUB_PAT ||
+    process.env.GH_TOKEN ||
+    ''
+  ).trim();
+
+  // 靜態鎖定本機 data 目錄路徑，消除 Turbopack dynamic tracing 警示
+  const getSafeLocalFile = (p: string) => path.join(process.cwd(), 'data', path.basename(p));
+
+  // 若未配置 Token，直接嘗試讀取本機磁碟
+  if (!token) {
+    try {
+      const localFile = getSafeLocalFile(cleanPath);
+      if (fs.existsSync(localFile)) {
+        const raw = fs.readFileSync(localFile, 'utf-8');
+        return { data: JSON.parse(raw), sha: 'local-sha' };
+      }
+    } catch (err: any) {
+      console.warn(`[github-db] 讀取本機 ${cleanPath} 失敗:`, err?.message);
+    }
+    return { data: fallbackData };
+  }
+
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${cleanPath}?ref=${encodeURIComponent(BRANCH)}`;
+
+  try {
+    const res = await fetch(apiUrl, {
+      headers,
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      if (res.status === 404) {
+        console.warn(`[github-db] 遠端檔案尚未存在 (${cleanPath})，嘗試讀取本機種子...`);
+        try {
+          const localFile = getSafeLocalFile(cleanPath);
+          if (fs.existsSync(localFile)) {
+            const raw = fs.readFileSync(localFile, 'utf-8');
+            return { data: JSON.parse(raw), sha: '' };
+          }
+        } catch {
+          // 忽略本機錯誤
+        }
+      }
+      return { data: fallbackData };
+    }
+
+    const file = await res.json();
+    const content = Buffer.from(file.content || '', 'base64').toString('utf-8');
+    const parsed = JSON.parse(content);
+    return { data: parsed, sha: file.sha };
+  } catch (err: any) {
+    console.error(`[github-db] getFileFromGitHub(${cleanPath}) 異常:`, err?.message);
+    try {
+      const localFile = getSafeLocalFile(cleanPath);
+      if (fs.existsSync(localFile)) {
+        const raw = fs.readFileSync(localFile, 'utf-8');
+        return { data: JSON.parse(raw) };
+      }
+    } catch {
+      // 忽略
+    }
+    return { data: fallbackData };
+  }
+}
+
+/**
+ * 通用寫入 GitHub 檔案（支援 orders.json、invoices.json 等任意資料結構）
+ * 嚴格去除前導斜線、自動獲取 SHA、支援新建與更新、同步本機備份
+ */
+export async function saveFileToGitHub(
+  filePath: string,
+  data: any,
+  commitMessage: string
+): Promise<void> {
+  const cleanPath = filePath.trim().replace(/^\/+/, '');
+  const { owner, repo } = getRepoInfo();
+  const headers = getHeaders();
+  const token = (
+    process.env.GITHUB_TOKEN ||
+    process.env.GITHUB_PAT ||
+    process.env.GH_TOKEN ||
+    ''
+  ).trim();
+
+  // 本地磁碟同步寫入（非 serverless 環境）
+  const isServerless =
+    Boolean(process.env.VERCEL) ||
+    Boolean(process.env.NOW_REGION) ||
+    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+  if (!isServerless) {
+    try {
+      const localFile = path.join(process.cwd(), 'data', path.basename(cleanPath));
+      const dir = path.dirname(localFile);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(localFile, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (err: any) {
+      console.warn(`[github-db] 本機同步備份寫入 ${cleanPath} 失敗:`, err?.message);
+    }
+  }
+
+  // 若無 Token，已完成本機磁碟寫入，直接返回
+  if (!token) {
+    console.warn(`[github-db] 未設置 GITHUB_TOKEN，檔案已保存至本地磁碟: ${cleanPath}`);
+    return;
+  }
+
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${cleanPath}`;
+
+  // 1. 先取得目前檔案的 SHA
+  let currentSha: string | undefined;
+  const getRes = await fetch(`${apiUrl}?ref=${encodeURIComponent(BRANCH)}`, {
+    headers,
+    cache: 'no-store',
+  });
+
+  if (getRes.ok) {
+    const fileData = await getRes.json();
+    currentSha = fileData.sha;
+  }
+
+  // 2. Base64 編碼 (支援 UTF-8 中文)
+  const jsonString = JSON.stringify(data, null, 2);
+  const contentBase64 = Buffer.from(jsonString, 'utf-8').toString('base64');
+
+  // 3. PUT 更新 / 提交
+  console.log(`[GitHub DB] 正在寫入更新至 GitHub: ${apiUrl} (${commitMessage})`);
+  const payload: any = {
+    message: `${commitMessage} [skip ci]`,
+    content: contentBase64,
+    branch: BRANCH,
+  };
+  if (currentSha) {
+    payload.sha = currentSha;
+  }
+
+  const putRes = await fetch(apiUrl, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  if (!putRes.ok) {
+    const err = await putRes.json().catch(() => ({}));
+    console.error(`[github-db] saveFileToGitHub 寫入失敗:`, err);
+    throw new Error(`GitHub 寫入失敗 (${putRes.status}): ${JSON.stringify(err)}`);
+  }
+}
+
