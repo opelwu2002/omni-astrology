@@ -12,7 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import bcrypt from 'bcryptjs';
 import { getSupabaseAdmin } from './db/supabase';
-import { upsertUser } from './db';
+import { upsertUser, deleteUser } from './db';
 
 export interface AuthUser {
   id: string;
@@ -71,8 +71,15 @@ function initializeUsers(): void {
       for (const u of jsonUsers) {
         if (!u.email) continue;
         const cleanEmail = u.email.trim().toLowerCase();
-        // 徹底排除舊管理員 admin@omni-astrology.com
+        // 徹底排除舊管理員與黃光隆等假資料
         if (cleanEmail === 'admin@omni-astrology.com') continue;
+        if (
+          cleanEmail.includes('huang.kl') ||
+          cleanEmail.includes('omni-enterprise.tw') ||
+          (u.name && (u.name.includes('黃光隆') || u.name.includes('大隆精密')))
+        ) {
+          continue;
+        }
 
         const isMaster = cleanEmail === 'opelwu2002@gmail.com';
         inMemoryUsers.set(cleanEmail, {
@@ -550,6 +557,11 @@ export function deleteAuthUser(idOrEmail: string): void {
     }
   }
 
+  // 連動實體檔案 data/users.json 刪除
+  try {
+    deleteUser(idOrEmail);
+  } catch {}
+
   // 同步刪除 Supabase 雲端資料庫（若有配置）
   const supabase = getSupabaseAdmin();
   if (supabase) {
@@ -560,6 +572,48 @@ export function deleteAuthUser(idOrEmail: string): void {
         .or(`id.eq.${idOrEmail},email.eq.${target}`)
         .then(() => {});
     } catch {}
+  }
+}
+
+/**
+ * 非同步永久刪除認證會員（強制真實 await 雲端 Supabase 資料庫）
+ */
+export async function deleteAuthUserAsync(idOrEmail: string): Promise<void> {
+  initializeUsers();
+  const target = (idOrEmail || '').trim().toLowerCase();
+  if (!target) return;
+
+  for (const [email, user] of inMemoryUsers.entries()) {
+    if (
+      user.id === idOrEmail ||
+      user.id.toLowerCase() === target ||
+      email === target
+    ) {
+      if (user.role === 'admin' || user.id === 'admin-master-001' || email === 'opelwu2002@gmail.com') {
+        continue;
+      }
+      inMemoryUsers.delete(email);
+    }
+  }
+
+  // 連動實體檔案 data/users.json 刪除
+  try {
+    deleteUser(idOrEmail);
+  } catch {}
+
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .or(`id.eq.${idOrEmail},email.eq.${target}`);
+      if (error) {
+        console.error('[auth-users] deleteAuthUserAsync 刪除失敗:', error);
+      }
+    } catch (err: any) {
+      console.error('[auth-users] deleteAuthUserAsync 異常:', err);
+    }
   }
 }
 

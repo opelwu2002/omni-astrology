@@ -4,8 +4,8 @@
 import fs from 'fs';
 import path from 'path';
 import assert from 'assert';
-import { getUsers, getUsersAsync, adminCreateUser, adminUpdateUser } from '../lib/db';
-import { createAuthUser, findAuthUserByEmail, getAllAuthUsersAsync } from '../lib/auth-users';
+import { getUsers, getUsersAsync, adminCreateUser, adminUpdateUser, deleteUser } from '../lib/db';
+import { createAuthUser, findAuthUserByEmail, getAllAuthUsersAsync, deleteAuthUser } from '../lib/auth-users';
 import { CLIMATE_CHANGE_INDUSTRIES } from '../lib/validators';
 
 async function runTests() {
@@ -38,38 +38,38 @@ async function runTests() {
   assert(migrationContent.includes('NOTIFY pgrst, \'reload schema\''), '必須包含 PostgREST schema 重載通知');
   console.log('✅ 測試 2 通過：獨立遷移腳本正確無誤\n');
 
-  // 測試 3：驗證 createAuthUser 註冊新會員（如黃光隆）
+  // 測試 3：驗證 createAuthUser 建立完整企業會員並保留欄位
   console.log('▶ 測試 3：檢驗 createAuthUser 建立完整企業會員並保留欄位...');
-  const testEmail = `huang.kl.${Date.now()}@omni-enterprise.tw`;
+  const testEmail = `test.sync.${Date.now()}@omni-audit.internal`;
   const newMember = await createAuthUser({
     email: testEmail,
     password: 'Password123!',
-    name: '黃光隆',
+    name: '全端整合測試員',
     phone: '0912345678',
-    company: '大隆精密工業股份有限公司',
-    taxId: '12345678',
+    company: '宇沛實業驗證組',
+    taxId: '93620650',
     industry: '製造業（如石化、鋼鐵、水泥、半導體等）',
-    address: '台中市南屯區精科路 88 號',
+    address: '台北市松山區敦化北路207號9樓之6',
   });
 
   assert.strictEqual(newMember.email, testEmail, 'Email 必須一致');
-  assert.strictEqual(newMember.name, '黃光隆', '姓名必須為黃光隆');
+  assert.strictEqual(newMember.name, '全端整合測試員', '姓名必須相符');
   assert.strictEqual(newMember.phone, '0912345678', '電話必須正確存入');
-  assert.strictEqual(newMember.company, '大隆精密工業股份有限公司', '公司名稱必須正確存入');
-  assert.strictEqual(newMember.taxId, '12345678', '統一編號必須正確存入');
+  assert.strictEqual(newMember.company, '宇沛實業驗證組', '公司名稱必須正確存入');
+  assert.strictEqual(newMember.taxId, '93620650', '統一編號必須正確存入');
   assert.strictEqual(newMember.industry, '製造業（如石化、鋼鐵、水泥、半導體等）', '行業必須正確存入');
-  assert.strictEqual(newMember.address, '台中市南屯區精科路 88 號', '通訊地址必須正確存入');
+  assert.strictEqual(newMember.address, '台北市松山區敦化北路207號9樓之6', '通訊地址必須正確存入');
   console.log('✅ 測試 3 通過：新會員建立成功且企業擴充欄位完整保存\n');
 
   // 測試 4：檢驗管理後台非同步讀取 getUsersAsync() 能否立即取得新註冊會員
   console.log('▶ 測試 4：檢驗管理後台 getUsersAsync() 是否能讀取到新註冊會員...');
   const backendUsers = await getUsersAsync();
   const foundBackendUser = backendUsers.find((u) => u.email === testEmail);
-  assert(foundBackendUser, '後台 getUsersAsync() 必須包含剛註冊的會員黃光隆');
-  assert.strictEqual(foundBackendUser.name, '黃光隆');
+  assert(foundBackendUser, '後台 getUsersAsync() 必須包含剛註冊的會員');
+  assert.strictEqual(foundBackendUser.name, '全端整合測試員');
   assert.strictEqual(foundBackendUser.phone, '0912345678');
-  assert.strictEqual(foundBackendUser.company, '大隆精密工業股份有限公司');
-  assert.strictEqual(foundBackendUser.taxId, '12345678');
+  assert.strictEqual(foundBackendUser.company, '宇沛實業驗證組');
+  assert.strictEqual(foundBackendUser.taxId, '93620650');
   console.log('✅ 測試 4 通過：管理後台 getUsersAsync() 成功撈取該新會員，資料零脫鉤！\n');
 
   // 測試 5：檢驗重複註冊時拋出明確錯誤
@@ -79,10 +79,10 @@ async function runTests() {
     await createAuthUser({
       email: testEmail,
       password: 'Password123!',
-      name: '黃光隆重複註冊',
+      name: '重複註冊測試員',
       phone: '0912345678',
       industry: '其他',
-      address: '台北市',
+      address: '台北市松山區敦化北路207號9樓之6',
     });
   } catch (err: any) {
     dupErrorThrown = true;
@@ -106,6 +106,12 @@ async function runTests() {
   const adminStatsRouteCode = fs.readFileSync(adminStatsRoutePath, 'utf-8');
   assert(adminStatsRouteCode.includes('await getUsersAsync()'), '後台統計 GET 必須呼叫 await getUsersAsync()');
   console.log('✅ 測試 7 通過：後台統計 API 100% 連接非同步雲端資料庫\n');
+
+  // 清理作業：移除測試會員資料，嚴防污染正式儲存庫 users.json
+  console.log('▶ 清理作業：移除測試會員資料...');
+  deleteUser(testEmail);
+  deleteAuthUser(testEmail);
+  console.log('✅ 測試會員已安全徹底清理，users.json 保持乾淨無假資料\n');
 
   console.log('🎉 所有 7 項驗證測試 100% 通過！資料持久化與前後台即時同步架構驗證成功！');
 }

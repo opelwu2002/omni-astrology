@@ -3,7 +3,17 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { createUser, getUsers, deleteUser, getSystemStats, findUserById, findUserByEmail } from '../lib/db';
+import {
+  createUser,
+  getUsers,
+  getUsersAsync,
+  readUsersFromDisk,
+  deleteUser,
+  adminUpdateUser,
+  getSystemStats,
+  findUserById,
+  findUserByEmail,
+} from '../lib/db';
 import { deleteAuthUser, findAuthUserByEmail } from '../lib/auth-users';
 
 async function runTests() {
@@ -78,6 +88,46 @@ async function runTests() {
   deleteUser('opelwu2002@gmail.com');
   const adminAfter = findUserByEmail('opelwu2002@gmail.com');
   assert(Boolean(adminAfter), '安全防護：最高管理者 opelwu2002@gmail.com (吳俊彥) 無法被刪除，依然健全');
+
+  // 8. 驗證編輯會員實體磁碟物理覆寫
+  const editEmail = `edit_test_${Date.now()}@example.com`;
+  const createdForEdit = createUser({
+    email: editEmail,
+    password: 'password123',
+    name: '待編輯測試員',
+    company: '編輯測試企業',
+    role: 'user',
+    status: 'active',
+    unlockedTiers: ['free'],
+  });
+  adminUpdateUser(createdForEdit.id, {
+    name: '已成功改名之測試員',
+    unlockedTiers: ['free', 'level2', 'level3'],
+  });
+  if (fs.existsSync(USERS_FILE)) {
+    const rawAfterEdit = fs.readFileSync(USERS_FILE, 'utf-8');
+    assert(rawAfterEdit.includes('已成功改名之測試員'), '編輯後【實體磁碟檢驗】：改名已物理覆寫入 data/users.json');
+    assert(rawAfterEdit.includes('level3'), '編輯後【實體磁碟檢驗】：權限 level3 已物理覆寫入 data/users.json');
+  }
+  // 清理
+  deleteUser(createdForEdit.id);
+
+  // 9. 驗證 users.json 磁碟檔案純淨無任何 Mock 假資料
+  if (fs.existsSync(USERS_FILE)) {
+    const finalDiskContent = fs.readFileSync(USERS_FILE, 'utf-8');
+    assert(!finalDiskContent.includes('黃光隆'), 'users.json 磁碟檔案嚴禁含有黃光隆');
+    assert(!finalDiskContent.includes('大隆精密'), 'users.json 磁碟檔案嚴禁含有大隆精密');
+    assert(!finalDiskContent.includes('陳雅婷 VIP'), 'users.json 磁碟檔案嚴禁含有陳雅婷 VIP');
+    assert(!finalDiskContent.includes('huang.kl'), 'users.json 磁碟檔案嚴禁含有 huang.kl');
+  }
+
+  // 10. 驗證 readUsersFromDisk()、getUsers() 與 getUsersAsync() 人數完全一致
+  const fromDisk = readUsersFromDisk();
+  const fromSync = getUsers();
+  const fromAsync = await getUsersAsync();
+  assert(fromDisk.length === fromSync.length, 'readUsersFromDisk 與 getUsers 人數 100% 相等');
+  assert(fromDisk.length === fromAsync.length, 'readUsersFromDisk 與 getUsersAsync 人數 100% 相等');
+  console.log(`  ✓ 當前真實會員人數精準為 ${fromDisk.length} 人，全入口 100% 同步，絕不亂跳`);
 
   console.log('\n========================================');
   console.log(`測試結果統計: 共 ${passed + failed} 項 | 通過: ${passed} | 失敗: ${failed}`);

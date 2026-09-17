@@ -97,10 +97,21 @@ function initUsers(): User[] {
       const content = fs.readFileSync(USERS_FILE, 'utf-8');
       let list: User[] = JSON.parse(content);
 
-      // 1. 徹底過濾刪除舊管理員 admin@omni-astrology.com
-      list = list.filter(
-        (u) => u.email.toLowerCase() !== 'admin@omni-astrology.com'
-      );
+      // 1. 徹底過濾刪除舊管理員與任何黃光隆/大隆精密工業等歷史假資料
+      list = list.filter((u) => {
+        const clean = (u.email || '').toLowerCase();
+        const cleanName = (u.name || '');
+        if (clean === 'admin@omni-astrology.com') return false;
+        if (
+          clean.includes('huang.kl') ||
+          clean.includes('omni-enterprise.tw') ||
+          cleanName.includes('黃光隆') ||
+          cleanName.includes('大隆精密')
+        ) {
+          return false;
+        }
+        return true;
+      });
 
       // 2. 確保 opelwu2002@gmail.com 擁有最高管理員 admin 權限
       let opelAdmin = list.find(
@@ -144,16 +155,6 @@ function initUsers(): User[] {
       unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],
       createdAt: Date.now() - 30 * 86400 * 1000,
       lastLoginAt: Date.now(),
-    },
-    {
-      id: 'user-sample-002',
-      email: 'vip@omni-astrology.com',
-      passwordHash: userPasswordHash,
-      name: '陳雅婷 VIP',
-      role: 'user',
-      status: 'active',
-      createdAt: Date.now() - 7 * 86400 * 1000,
-      lastLoginAt: Date.now() - 3600 * 1000,
     },
   ];
 
@@ -288,13 +289,71 @@ function initStats(): SystemStats {
   return initialStats;
 }
 
-// 讀取所有會員 (同步快取)
-export function getUsers(): User[] {
+// 直接從實體磁碟 data/users.json 讀取最新會員資料，絕不回傳任何 Mock 假資料
+export function readUsersFromDisk(): User[] {
+  if (fs.existsSync(USERS_FILE)) {
+    try {
+      const content = fs.readFileSync(USERS_FILE, 'utf-8');
+      let list: User[] = JSON.parse(content);
+      if (Array.isArray(list)) {
+        // 嚴格黑名單過濾
+        list = list.filter((u) => {
+          const clean = (u.email || '').toLowerCase();
+          const cleanName = (u.name || '');
+          if (clean === 'admin@omni-astrology.com') return false;
+          if (
+            clean.includes('huang.kl') ||
+            clean.includes('omni-enterprise.tw') ||
+            cleanName.includes('黃光隆') ||
+            cleanName.includes('大隆精密')
+          ) {
+            return false;
+          }
+          return true;
+        });
+
+        // 確保最高管理員存在
+        let masterAdmin = list.find((u) => u.email.toLowerCase() === 'opelwu2002@gmail.com');
+        if (!masterAdmin) {
+          const salt = bcrypt.genSaltSync(10);
+          const masterAdminPasswordHash = bcrypt.hashSync('Opel6439', salt);
+          masterAdmin = {
+            id: 'admin-master-001',
+            email: 'opelwu2002@gmail.com',
+            passwordHash: masterAdminPasswordHash,
+            name: '吳俊彥',
+            role: 'admin',
+            status: 'active',
+            unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],
+            createdAt: 1786868793061,
+            lastLoginAt: Date.now(),
+          };
+          list.unshift(masterAdmin);
+          saveUsers(list);
+        } else {
+          masterAdmin.role = 'admin';
+          masterAdmin.name = '吳俊彥';
+          masterAdmin.unlockedTiers = ['free', 'level2', 'level3', 'synastry_addon'];
+        }
+
+        cachedUsers = list;
+        return list;
+      }
+    } catch {
+      // 若檔案讀取或解析失敗，繼續走初始化
+    }
+  }
+
   return initUsers();
 }
 
+// 讀取所有會員 (直接讀取實體磁碟 data/users.json)
+export function getUsers(): User[] {
+  return readUsersFromDisk();
+}
+
 /**
- * 非同步讀取所有會員（優先連線 Supabase 雲端資料庫撈取最新名單，若離線或無配置則自動降級至記憶體快取）
+ * 非同步讀取所有會員（優先直通 Supabase 雲端資料庫，離線時無縫降級至磁碟快取）
  */
 export async function getUsersAsync(): Promise<User[]> {
   const supabase = getSupabaseAdmin();
@@ -306,19 +365,22 @@ export async function getUsersAsync(): Promise<User[]> {
         .order('created_at', { ascending: false });
 
       if (!error && Array.isArray(data)) {
-        const currentList = initUsers();
-        const mergedMap = new Map<string, User>();
-        // 先放入本機種子會員
-        for (const u of currentList) {
-          mergedMap.set(u.email.toLowerCase(), u);
-        }
-        // 雲端資料庫覆蓋/新增最新會員資料
+        const cloudList: User[] = [];
         for (const row of data) {
           const cleanEmail = (row.email || '').trim().toLowerCase();
+          const cleanName = (row.name || '').trim();
           if (!cleanEmail || cleanEmail === 'admin@omni-astrology.com') continue;
+          if (
+            cleanEmail.includes('huang.kl') ||
+            cleanEmail.includes('omni-enterprise.tw') ||
+            cleanName.includes('黃光隆') ||
+            cleanName.includes('大隆精密')
+          ) {
+            continue;
+          }
 
           const isMaster = cleanEmail === 'opelwu2002@gmail.com';
-          const user: User = {
+          cloudList.push({
             id: row.id,
             email: cleanEmail,
             passwordHash: row.password_hash || '',
@@ -337,27 +399,69 @@ export async function getUsersAsync(): Promise<User[]> {
               : ['free'],
             createdAt: Number(row.created_at) || Date.now(),
             lastLoginAt: row.last_login_at ? Number(row.last_login_at) : undefined,
-          };
-          mergedMap.set(cleanEmail, user);
+          });
         }
-        const mergedList = Array.from(mergedMap.values());
-        mergedList.sort((a, b) => b.createdAt - a.createdAt);
-        cachedUsers = mergedList;
-        return mergedList;
-      } else if (error) {
-        console.warn('[db] Supabase getUsersAsync 查詢回傳錯誤:', error.message);
+
+        if (!cloudList.some((u) => u.email === 'opelwu2002@gmail.com')) {
+          cloudList.unshift({
+            id: 'admin-master-001',
+            email: 'opelwu2002@gmail.com',
+            passwordHash: bcrypt.hashSync('Opel6439', 10),
+            name: '吳俊彥',
+            role: 'admin',
+            status: 'active',
+            unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],
+            createdAt: 1786868793061,
+            lastLoginAt: Date.now(),
+          });
+        }
+
+        cachedUsers = cloudList;
+        return cloudList;
       }
     } catch (err: any) {
       console.warn('[db] getUsersAsync 讀取 Supabase 異常:', err?.message);
     }
   }
-  return initUsers();
+
+  return readUsersFromDisk();
 }
 
-// 儲存會員
+// 儲存會員（Vercel 唯讀環境嚴格保護，絕不寫入磁碟）
 export function saveUsers(users: User[]): void {
-  cachedUsers = [...users];
-  safeWriteFileSync(USERS_FILE, users);
+  const isServerless =
+    Boolean(process.env.VERCEL) ||
+    Boolean(process.env.NOW_REGION) ||
+    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+  const cleanUsers = users.filter((u) => {
+    const clean = (u.email || '').toLowerCase();
+    const cleanName = (u.name || '');
+    return (
+      clean !== 'admin@omni-astrology.com' &&
+      !clean.includes('huang.kl') &&
+      !clean.includes('omni-enterprise.tw') &&
+      !cleanName.includes('黃光隆') &&
+      !cleanName.includes('大隆精密')
+    );
+  });
+
+  cachedUsers = cleanUsers;
+
+  if (isServerless) {
+    // Vercel 雲端環境全由雲端資料庫與記憶體接管，絕對不寫入磁碟
+    return;
+  }
+
+  try {
+    const dir = path.dirname(USERS_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(USERS_FILE, JSON.stringify(cleanUsers, null, 2), 'utf-8');
+  } catch (err: any) {
+    console.warn('[db] saveUsers 寫入通知:', err?.message);
+  }
 }
 
 // 安全過濾使用者（去除密碼雜湊）
@@ -494,7 +598,7 @@ export function deleteUser(idOrEmail: string): UserSafe[] {
 
   saveUsers(users);
 
-  // 若配置 Supabase，同步執行雲端資料庫刪除
+  // 若配置 Supabase，同步嘗試執行雲端資料庫刪除
   if (isSupabaseConfigured()) {
     try {
       const supabase = getSupabaseAdmin();
@@ -506,6 +610,46 @@ export function deleteUser(idOrEmail: string): UserSafe[] {
           .then(() => {});
       }
     } catch {}
+  }
+
+  return users.map(toSafeUser);
+}
+
+// 永久刪除會員（非同步真實 await 雲端資料庫）
+export async function deleteUserAsync(idOrEmail: string): Promise<UserSafe[]> {
+  const target = idOrEmail.trim().toLowerCase();
+  let users = getUsers();
+
+  users = users.filter((u) => {
+    if (u.id === 'admin-master-001' || u.role === 'admin' || u.email.toLowerCase() === 'opelwu2002@gmail.com') {
+      return true;
+    }
+    if (u.id === idOrEmail) return false;
+    if (u.id.toLowerCase() === target) return false;
+    if (u.email.toLowerCase() === target) return false;
+    return true;
+  });
+
+  saveUsers(users);
+
+  // 若配置 Supabase，強制真實 await 執行雲端資料庫刪除！
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { error } = await supabase
+          .from('users')
+          .delete()
+          .or(`id.eq.${idOrEmail},email.eq.${target}`);
+        if (error) {
+          console.error('[db] deleteUserAsync Supabase 刪除失敗:', error);
+          throw new Error(`雲端資料庫刪除失敗：${error.message}`);
+        }
+      }
+    } catch (err: any) {
+      console.error('[db] deleteUserAsync 執行異常:', err);
+      throw err;
+    }
   }
 
   return users.map(toSafeUser);
@@ -611,7 +755,8 @@ export function adminUpdateUser(
   }
 ): UserSafe {
   const users = getUsers();
-  const idx = users.findIndex((u) => u.id === id);
+  const cleanId = id.trim().toLowerCase();
+  const idx = users.findIndex((u) => u.id === id || u.email.toLowerCase() === cleanId);
   if (idx === -1) {
     throw new Error('找不到指定會員');
   }

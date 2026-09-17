@@ -17,7 +17,7 @@ interface AuthState {
   setAuth: (user: UserSafe, token: string) => void;
   login: (accountOrEmail: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (
-    params: RegisterParams | { email: string; password: string; name?: string }
+    params: RegisterParams | (Partial<RegisterParams> & { email: string; password: string })
   ) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   checkAuth: () => Promise<void>;
@@ -83,14 +83,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  register: async (params: RegisterParams | { email: string; password: string; name?: string }) => {
+  register: async (
+    params: RegisterParams | (Partial<RegisterParams> & { email: string; password: string })
+  ) => {
     set({ isLoading: true });
     try {
+      // 100% 直通傳遞前端真實表單輸入，嚴格禁止任何假資料 (Mock Data) 或預設值填入
       const payload = {
-        phone: '0900000000',
-        industry: '其他',
-        address: '台北市',
-        ...params,
+        name: params.name?.trim() || '',
+        email: params.email?.trim().toLowerCase() || '',
+        password: params.password || '',
+        phone: params.phone?.trim() || '',
+        company: params.company?.trim() || undefined,
+        taxId: params.taxId?.trim() || undefined,
+        industry: params.industry || '',
+        address: params.address?.trim() || '',
       };
 
       const res = await fetch('/api/auth/register', {

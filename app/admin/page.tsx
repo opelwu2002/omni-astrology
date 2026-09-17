@@ -605,6 +605,7 @@ export default function AdminPage() {
         setIsEditUserModalOpen(false);
         setEditingUser(null);
         fetchUsers();
+        fetchStats();
         fetchAuditLogs();
       } else {
         showFeedback('error', data.error || '更新會員失敗');
@@ -637,6 +638,7 @@ export default function AdminPage() {
           `會員 ${targetUser.name} 已${newStatus === 'active' ? '恢復正常使用' : '成功停權'}`
         );
         fetchUsers();
+        fetchStats();
         fetchAuditLogs();
       } else {
         showFeedback('error', data.error || '變更狀態失敗');
