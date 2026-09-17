@@ -1,23 +1,5 @@
 [
   {
-    "id": "user-1789624902403-6tc7k",
-    "email": "test.sync.1789624902275@omni-audit.internal",
-    "passwordHash": "$2b$10$3sOdSAfsFVlikPNuKxlkm.OGdT/xrW3GohuP/px6Lu8Ys1v/UQkG2",
-    "name": "全端整合測試員",
-    "role": "user",
-    "status": "active",
-    "phone": "0912345678",
-    "company": "宇沛實業驗證組",
-    "taxId": "93620650",
-    "industry": "製造業（如石化、鋼鐵、水泥、半導體等）",
-    "address": "台北市松山區敦化北路207號9樓之6",
-    "unlockedTiers": [
-      "free"
-    ],
-    "createdAt": 1789624902403,
-    "lastLoginAt": 1789624902403
-  },
-  {
     "id": "user-1789565978547-v7nxp",
     "email": "peirung1121@gmail.com",
     "passwordHash": "$2b$10$jj7RPsSejFFmYugAr4jIJOKPlsdMMVSmjWPLxrwU2I/ayj1xPZdE6",
