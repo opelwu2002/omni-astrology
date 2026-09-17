@@ -1,17 +1,5 @@
 [
   {
-    "id": "ord-1789565863674-WRKF",
-    "orderNumber": "ORD20260916WRKF",
-    "userId": "test-pending-user",
-    "userEmail": "pending@test.com",
-    "tier": "level2",
-    "tierName": "初階解析報告",
-    "amount": 199,
-    "paymentMethod": "ecpay",
-    "status": "pending",
-    "createdAt": 1789565863674
-  },
-  {
     "id": "ord-1789564671130-TSPO",
     "orderNumber": "ORD20260916TSPO",
     "userId": "test-pending-user",
