@@ -24,7 +24,12 @@ import {
 } from '@/types/auth';
 import { UserProfile } from '@/types/profile';
 
-import { getSupabaseAdmin, isSupabaseConfigured } from './supabase';
+import {
+  fetchUsersFromGithub,
+  commitUsersToGithub,
+  filterOutGhostUsers,
+  invalidateGithubUsersCache,
+} from '../github-db';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -353,75 +358,68 @@ export function getUsers(): User[] {
 }
 
 /**
- * 非同步讀取所有會員（優先直通 Supabase 雲端資料庫，離線時無縫降級至磁碟快取）
+ * 非同步讀取所有會員（優先直通 GitHub Contents API 雲端資料庫，離線時無縫降級至磁碟快取）
  */
 export async function getUsersAsync(): Promise<User[]> {
-  const supabase = getSupabaseAdmin();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && Array.isArray(data)) {
-        const cloudList: User[] = [];
-        for (const row of data) {
-          const cleanEmail = (row.email || '').trim().toLowerCase();
-          const cleanName = (row.name || '').trim();
-          if (!cleanEmail || cleanEmail === 'admin@omni-astrology.com') continue;
-          if (
-            cleanEmail.includes('huang.kl') ||
-            cleanEmail.includes('omni-enterprise.tw') ||
-            cleanName.includes('黃光隆') ||
-            cleanName.includes('大隆精密')
-          ) {
-            continue;
-          }
-
-          const isMaster = cleanEmail === 'opelwu2002@gmail.com';
-          cloudList.push({
-            id: row.id,
-            email: cleanEmail,
-            passwordHash: row.password_hash || '',
-            name: isMaster ? '吳俊彥' : row.name || cleanEmail.split('@')[0],
-            role: isMaster ? 'admin' : row.role === 'admin' ? 'admin' : 'user',
-            status: row.status === 'suspended' ? 'suspended' : 'active',
-            phone: row.phone || undefined,
-            company: row.company || undefined,
-            taxId: row.tax_id || undefined,
-            industry: row.industry || undefined,
-            address: row.address || undefined,
-            unlockedTiers: isMaster
-              ? ['free', 'level2', 'level3', 'synastry_addon']
-              : Array.isArray(row.unlocked_tiers)
-              ? row.unlocked_tiers
-              : ['free'],
-            createdAt: Number(row.created_at) || Date.now(),
-            lastLoginAt: row.last_login_at ? Number(row.last_login_at) : undefined,
-          });
+  try {
+    const { users } = await fetchUsersFromGithub();
+    if (Array.isArray(users) && users.length > 0) {
+      const cleanList: User[] = [];
+      for (const row of users) {
+        const cleanEmail = (row.email || '').trim().toLowerCase();
+        const cleanName = (row.name || '').trim();
+        if (!cleanEmail || cleanEmail === 'admin@omni-astrology.com') continue;
+        if (
+          cleanEmail.includes('huang.kl') ||
+          cleanEmail.includes('omni-enterprise.tw') ||
+          cleanName.includes('黃光隆') ||
+          cleanName.includes('大隆精密')
+        ) {
+          continue;
         }
 
-        if (!cloudList.some((u) => u.email === 'opelwu2002@gmail.com')) {
-          cloudList.unshift({
-            id: 'admin-master-001',
-            email: 'opelwu2002@gmail.com',
-            passwordHash: bcrypt.hashSync('Opel6439', 10),
-            name: '吳俊彥',
-            role: 'admin',
-            status: 'active',
-            unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],
-            createdAt: 1786868793061,
-            lastLoginAt: Date.now(),
-          });
-        }
-
-        cachedUsers = cloudList;
-        return cloudList;
+        const isMaster = cleanEmail === 'opelwu2002@gmail.com';
+        cleanList.push({
+          id: row.id || `user-${Date.now()}`,
+          email: cleanEmail,
+          passwordHash: row.passwordHash || '',
+          name: isMaster ? '吳俊彥' : row.name || cleanEmail.split('@')[0],
+          role: isMaster ? 'admin' : row.role === 'admin' ? 'admin' : 'user',
+          status: row.status === 'suspended' ? 'suspended' : 'active',
+          phone: row.phone || undefined,
+          company: row.company || undefined,
+          taxId: row.taxId || undefined,
+          industry: row.industry || undefined,
+          address: row.address || undefined,
+          unlockedTiers: isMaster
+            ? ['free', 'level2', 'level3', 'synastry_addon']
+            : Array.isArray(row.unlockedTiers)
+            ? row.unlockedTiers
+            : ['free'],
+          createdAt: Number(row.createdAt) || Date.now(),
+          lastLoginAt: row.lastLoginAt ? Number(row.lastLoginAt) : undefined,
+        });
       }
-    } catch (err: any) {
-      console.warn('[db] getUsersAsync 讀取 Supabase 異常:', err?.message);
+
+      if (!cleanList.some((u) => u.email === 'opelwu2002@gmail.com')) {
+        cleanList.unshift({
+          id: 'admin-master-001',
+          email: 'opelwu2002@gmail.com',
+          passwordHash: bcrypt.hashSync('Opel6439', 10),
+          name: '吳俊彥',
+          role: 'admin',
+          status: 'active',
+          unlockedTiers: ['free', 'level2', 'level3', 'synastry_addon'],
+          createdAt: 1786868793061,
+          lastLoginAt: Date.now(),
+        });
+      }
+
+      cachedUsers = cleanList;
+      return cleanList;
     }
+  } catch (err: any) {
+    console.warn('[db] getUsersAsync 讀取 GitHub 異常:', err?.message);
   }
 
   return readUsersFromDisk();
@@ -429,6 +427,7 @@ export async function getUsersAsync(): Promise<User[]> {
 
 // 儲存會員（Vercel 唯讀環境嚴格保護，絕不寫入磁碟）
 export function saveUsers(users: User[]): void {
+  invalidateGithubUsersCache();
   const isServerless =
     Boolean(process.env.VERCEL) ||
     Boolean(process.env.NOW_REGION) ||
@@ -597,25 +596,10 @@ export function deleteUser(idOrEmail: string): UserSafe[] {
   });
 
   saveUsers(users);
-
-  // 若配置 Supabase，同步嘗試執行雲端資料庫刪除
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        supabase
-          .from('users')
-          .delete()
-          .or(`id.eq.${idOrEmail},email.eq.${target}`)
-          .then(() => {});
-      }
-    } catch {}
-  }
-
   return users.map(toSafeUser);
 }
 
-// 永久刪除會員（非同步真實 await 雲端資料庫）
+// 永久刪除會員（非同步真實 commit 雲端 GitHub 倉庫）
 export async function deleteUserAsync(idOrEmail: string): Promise<UserSafe[]> {
   const target = idOrEmail.trim().toLowerCase();
   let users = getUsers();
@@ -632,24 +616,17 @@ export async function deleteUserAsync(idOrEmail: string): Promise<UserSafe[]> {
 
   saveUsers(users);
 
-  // 若配置 Supabase，強制真實 await 執行雲端資料庫刪除！
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { error } = await supabase
-          .from('users')
-          .delete()
-          .or(`id.eq.${idOrEmail},email.eq.${target}`);
-        if (error) {
-          console.error('[db] deleteUserAsync Supabase 刪除失敗:', error);
-          throw new Error(`雲端資料庫刪除失敗：${error.message}`);
-        }
-      }
-    } catch (err: any) {
-      console.error('[db] deleteUserAsync 執行異常:', err);
-      throw err;
+  // 提交至 GitHub 倉庫
+  try {
+    const commitRes = await commitUsersToGithub(
+      users,
+      `chore(db): 永久刪除會員 ${idOrEmail} [skip ci]`
+    );
+    if (!commitRes.success) {
+      console.warn('[db] deleteUserAsync 提交 GitHub 警示:', commitRes.error);
     }
+  } catch (err: any) {
+    console.error('[db] deleteUserAsync 提交 GitHub 異常:', err?.message);
   }
 
   return users.map(toSafeUser);
@@ -702,38 +679,13 @@ export function adminCreateUser(params: {
   users.unshift(newUser);
   saveUsers(users);
 
-  // 同步寫入雲端 Supabase（若有配置）
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        supabase
-          .from('users')
-          .insert({
-            id: newUser.id,
-            email: newUser.email,
-            password_hash: newUser.passwordHash,
-            name: newUser.name,
-            role: newUser.role,
-            status: newUser.status,
-            phone: newUser.phone,
-            company: newUser.company,
-            tax_id: newUser.taxId,
-            industry: newUser.industry,
-            address: newUser.address,
-            unlocked_tiers: newUser.unlockedTiers,
-            provider: 'credentials',
-            created_at: newUser.createdAt,
-            last_login_at: newUser.lastLoginAt,
-          })
-          .then(({ error }) => {
-            if (error) console.warn('[db] adminCreateUser 同步 Supabase 警告:', error.message);
-          });
-      }
-    } catch (err: any) {
-      console.warn('[db] adminCreateUser 同步 Supabase 異常:', err?.message);
-    }
-  }
+  // 同步提交至 GitHub 倉庫
+  commitUsersToGithub(
+    users,
+    `feat(db): 管理員建立新會員 ${newUser.name} (${newUser.email}) [skip ci]`
+  ).catch((err) => {
+    console.warn('[db] adminCreateUser 提交 GitHub 警告:', err?.message);
+  });
 
   return toSafeUser(newUser);
 }
@@ -777,37 +729,13 @@ export function adminUpdateUser(
 
   saveUsers(users);
 
-  // 同步更新雲端 Supabase（若有配置）
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const updatePayload: any = {};
-        if (params.name !== undefined) updatePayload.name = params.name;
-        if (params.role !== undefined) updatePayload.role = params.role;
-        if (params.status !== undefined) updatePayload.status = params.status;
-        if (params.phone !== undefined) updatePayload.phone = params.phone;
-        if (params.company !== undefined) updatePayload.company = params.company;
-        if (params.taxId !== undefined) updatePayload.tax_id = params.taxId;
-        if (params.industry !== undefined) updatePayload.industry = params.industry;
-        if (params.address !== undefined) updatePayload.address = params.address;
-        if (params.unlockedTiers !== undefined) updatePayload.unlocked_tiers = params.unlockedTiers;
-        if (params.password && params.password.trim().length >= 6) {
-          updatePayload.password_hash = users[idx].passwordHash;
-        }
-
-        supabase
-          .from('users')
-          .update(updatePayload)
-          .eq('id', id)
-          .then(({ error }) => {
-            if (error) console.warn('[db] adminUpdateUser 同步 Supabase 警告:', error.message);
-          });
-      }
-    } catch (err: any) {
-      console.warn('[db] adminUpdateUser 同步 Supabase 異常:', err?.message);
-    }
-  }
+  // 同步提交至 GitHub 倉庫
+  commitUsersToGithub(
+    users,
+    `chore(db): 管理員更新會員 ${users[idx].email} 資料與權限 [skip ci]`
+  ).catch((err) => {
+    console.warn('[db] adminUpdateUser 提交 GitHub 警告:', err?.message);
+  });
 
   return toSafeUser(users[idx]);
 }
@@ -1523,54 +1451,32 @@ export function updateDbContent(fileName: string, content: string): void {
 }
 
 /**
- * 安全同步更新使用者最後登入時間至雲端 Supabase 資料庫
- * （絕不觸發 Vercel EROFS 檔案寫入異常）
+ * 安全同步更新使用者最後登入時間至儲存庫
  */
 export async function syncUserLastLogin(userId: string): Promise<void> {
-  const supabase = getSupabaseAdmin();
-  if (supabase) {
-    try {
-      await supabase
-        .from('users')
-        .update({ last_login_at: Date.now() })
-        .eq('id', userId);
-    } catch (err: any) {
-      console.warn('[Supabase Sync Warning] 更新 last_login_at 失敗:', err?.message);
+  try {
+    const users = getUsers();
+    const idx = users.findIndex((u) => u.id === userId);
+    if (idx !== -1) {
+      users[idx].lastLoginAt = Date.now();
+      saveUsers(users);
     }
+  } catch (err: any) {
+    console.warn('[db] 更新 lastLoginAt 通知:', err?.message);
   }
 }
 
 /**
- * 依據 Email 尋找使用者（優先查詢 Supabase 雲端資料庫，離線或未配置時降級至記憶體/本地快取）
+ * 依據 Email 尋找使用者（優先查詢 GitHub 雲端資料庫/記憶體快取）
  */
 export async function findUserByEmailFromDb(email: string): Promise<User | undefined> {
   const cleanEmail = email.trim().toLowerCase();
-  const supabase = getSupabaseAdmin();
-
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', cleanEmail)
-        .maybeSingle();
-
-      if (!error && data) {
-        return {
-          id: data.id,
-          email: data.email,
-          passwordHash: data.password_hash || '',
-          name: data.name || cleanEmail.split('@')[0],
-          role: (data.role as any) || 'user',
-          status: (data.status as any) || 'active',
-          unlockedTiers: (data.unlocked_tiers as any) || ['free'],
-          createdAt: Number(data.created_at) || Date.now(),
-          lastLoginAt: data.last_login_at ? Number(data.last_login_at) : Date.now(),
-        };
-      }
-    } catch (err: any) {
-      console.warn('[Supabase Query Warning] 查詢用戶失敗，降級使用本地快取:', err?.message);
-    }
+  try {
+    const users = await getUsersAsync();
+    const found = users.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (found) return found;
+  } catch (err: any) {
+    console.warn('[db] findUserByEmailFromDb 異常，降級使用本地快取:', err?.message);
   }
 
   return findUserByEmail(cleanEmail);
@@ -1578,7 +1484,7 @@ export async function findUserByEmailFromDb(email: string): Promise<User | undef
 
 /**
  * 第三方 OAuth (Google / GitHub / LINE) 使用者登入/自動建立中樞
- * 保證在雲端資料庫與本地記憶體中完成同步，並維持已解鎖權限
+ * 保證在 GitHub 雲端資料庫與本地記憶體中完成同步，並維持已解鎖權限
  */
 export async function upsertOAuthUser(params: {
   email: string;
@@ -1587,7 +1493,6 @@ export async function upsertOAuthUser(params: {
   providerId?: string;
 }): Promise<UserSafe> {
   const cleanEmail = params.email.trim().toLowerCase();
-  const supabase = getSupabaseAdmin();
   let existingUser = await findUserByEmailFromDb(cleanEmail);
 
   if (existingUser) {
@@ -1597,21 +1502,13 @@ export async function upsertOAuthUser(params: {
       lastLoginAt: Date.now(),
     });
 
-    if (supabase) {
-      try {
-        await supabase
-          .from('users')
-          .update({
-            name: updated.name,
-            last_login_at: Date.now(),
-            provider: params.provider,
-            provider_id: params.providerId || null,
-          })
-          .eq('id', existingUser.id);
-      } catch (err: any) {
-        console.warn('[Supabase OAuth Update Warning]:', err?.message);
-      }
-    }
+    const users = getUsers();
+    commitUsersToGithub(
+      users,
+      `chore(auth): 第三方登入更新資訊 (${cleanEmail}) [skip ci]`
+    ).catch((err) => {
+      console.warn('[db] upsertOAuthUser 提交 GitHub 警告:', err?.message);
+    });
 
     return updated;
   }
@@ -1634,24 +1531,12 @@ export async function upsertOAuthUser(params: {
   users.unshift(newUser);
   saveUsers(users);
 
-  if (supabase) {
-    try {
-      await supabase.from('users').insert({
-        id: newUser.id,
-        email: newUser.email,
-        name: newUser.name,
-        role: newUser.role,
-        status: newUser.status,
-        unlocked_tiers: newUser.unlockedTiers,
-        provider: params.provider,
-        provider_id: params.providerId || null,
-        created_at: newUser.createdAt,
-        last_login_at: newUser.lastLoginAt,
-      });
-    } catch (err: any) {
-      console.warn('[Supabase OAuth Insert Warning]:', err?.message);
-    }
-  }
+  commitUsersToGithub(
+    users,
+    `feat(auth): 新增第三方會員 (${cleanEmail}) [skip ci]`
+  ).catch((err) => {
+    console.warn('[db] upsertOAuthUser 新增會員提交 GitHub 警告:', err?.message);
+  });
 
   return toSafeUser(newUser);
 }

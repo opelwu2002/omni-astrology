@@ -1,5 +1,22 @@
 [
   {
+    "id": "user-1789518932653-wba48",
+    "email": "opelwu2002@gmail.com",
+    "passwordHash": "$2b$10$DfBfP/p6oDTS/fi2AVbgLOPNtxDWJIo9rogtPSFp32IpOIvw/DmXq",
+    "name": "吳俊彥",
+    "role": "admin",
+    "status": "active",
+    "unlockedTiers": [
+      "free",
+      "level2",
+      "level3",
+      "synastry_addon"
+    ],
+    "createdAt": 1789518932653,
+    "lastLoginAt": 1789534958686,
+    "provider": "credentials"
+  },
+  {
     "id": "user-1789565978547-v7nxp",
     "email": "peirung1121@gmail.com",
     "passwordHash": "$2b$10$jj7RPsSejFFmYugAr4jIJOKPlsdMMVSmjWPLxrwU2I/ayj1xPZdE6",
@@ -18,22 +35,7 @@
       "level3"
     ],
     "createdAt": 1789565978547,
-    "lastLoginAt": 1789565978547
-  },
-  {
-    "id": "user-1789518932653-wba48",
-    "email": "opelwu2002@gmail.com",
-    "passwordHash": "$2b$10$DfBfP/p6oDTS/fi2AVbgLOPNtxDWJIo9rogtPSFp32IpOIvw/DmXq",
-    "name": "吳俊彥",
-    "role": "admin",
-    "status": "active",
-    "createdAt": 1789518932653,
-    "unlockedTiers": [
-      "free",
-      "level2",
-      "level3",
-      "synastry_addon"
-    ],
-    "lastLoginAt": 1789534958686
+    "lastLoginAt": 1789565978547,
+    "provider": "credentials"
   }
 ]

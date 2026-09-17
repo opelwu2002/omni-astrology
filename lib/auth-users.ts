@@ -2,16 +2,20 @@
  * Omni-Astrology 全端認證與會員資料安全存取層 (lib/auth-users.ts)
  * 功用：
  * 1. 啟動時安全唯讀載入 data/users.json 作為基礎種子資料 (Seed Users)
- * 2. 封殺所有本機寫入，徹底杜絕 Vercel Serverless EROFS 唯讀檔案系統錯誤
- * 3. 完美相容舊會員（包含 opelwu2002@gmail.com 之 bcrypt 密碼與已解鎖權限）
- * 4. 硬性保證最高管理員 (admin / Opel6439) 絕對通行
- * 5. 雲端資料庫優先適配（配置 Supabase 則雙向同步）
+ * 2. 直通 GitHub Contents API 進行雲端永續儲存，徹底拔除 Supabase 依賴
+ * 3. 封殺所有本機寫入，徹底杜絕 Vercel Serverless EROFS 唯讀檔案系統錯誤
+ * 4. 完美相容舊會員（包含 opelwu2002@gmail.com 之 bcrypt 密碼與已解鎖權限）
+ * 5. 硬性保證最高管理員 (admin / Opel6439 / opelwu2002@gmail.com) 絕對通行
  */
 
 import fs from 'fs';
 import path from 'path';
 import bcrypt from 'bcryptjs';
-import { getSupabaseAdmin } from './db/supabase';
+import {
+  fetchUsersFromGithub,
+  commitUsersToGithub,
+  filterOutGhostUsers,
+} from './github-db';
 import { upsertUser, deleteUser } from './db';
 
 export interface AuthUser {
@@ -48,12 +52,12 @@ const MASTER_ADMIN_USER: AuthUser = {
   lastLoginAt: Date.now(),
 };
 
-// 記憶體會員資料庫（在 Serverless 生命週期內持續存在，絕不拋出 EROFS）
+// 記憶體會員資料庫（在 Serverless 生命週期內持續存在，杜絕 EROFS）
 let inMemoryUsers: Map<string, AuthUser> = new Map();
 let isInitialized = false;
 
 /**
- * 載入基礎種子資料 (唯讀模式，絕不寫入磁碟)
+ * 載入基礎種子資料 (唯讀模式)
  */
 function initializeUsers(): void {
   if (isInitialized) return;
@@ -67,21 +71,13 @@ function initializeUsers(): void {
     if (fs.existsSync(usersFilePath)) {
       const fileData = fs.readFileSync(usersFilePath, 'utf-8');
       const jsonUsers: any[] = JSON.parse(fileData);
+      const cleanUsers = filterOutGhostUsers(jsonUsers);
 
-      for (const u of jsonUsers) {
+      for (const u of cleanUsers) {
         if (!u.email) continue;
         const cleanEmail = u.email.trim().toLowerCase();
-        // 徹底排除舊管理員與黃光隆等假資料
-        if (cleanEmail === 'admin@omni-astrology.com') continue;
-        if (
-          cleanEmail.includes('huang.kl') ||
-          cleanEmail.includes('omni-enterprise.tw') ||
-          (u.name && (u.name.includes('黃光隆') || u.name.includes('大隆精密')))
-        ) {
-          continue;
-        }
-
         const isMaster = cleanEmail === 'opelwu2002@gmail.com';
+
         inMemoryUsers.set(cleanEmail, {
           id: u.id || `user-${Date.now()}`,
           email: cleanEmail,
@@ -122,7 +118,7 @@ export function toSafeAuthUser(user: AuthUser): SafeAuthUser {
 }
 
 /**
- * 依 Email 尋找使用者（支援同步快取與非同步雲端查找）
+ * 依 Email 尋找使用者（同步快取查找）
  */
 export function findAuthUserByEmailSync(email: string): AuthUser | undefined {
   initializeUsers();
@@ -137,7 +133,7 @@ export function findAuthUserByEmailSync(email: string): AuthUser | undefined {
 }
 
 /**
- * 依 Email 非同步查詢（優先查詢 Supabase 雲端資料庫，離線時無縫降級至記憶體）
+ * 依 Email 非同步查詢（優先自 GitHub 倉庫同步最新資料）
  */
 export async function findAuthUserByEmail(email: string): Promise<AuthUser | undefined> {
   initializeUsers();
@@ -148,48 +144,42 @@ export async function findAuthUserByEmail(email: string): Promise<AuthUser | und
     return inMemoryUsers.get('opelwu2002@gmail.com') || MASTER_ADMIN_USER;
   }
 
-  // 2. 嘗試自雲端 Supabase 查詢最新狀態
-  const supabase = getSupabaseAdmin();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', clean)
-        .maybeSingle();
+  // 2. 若快取中存在直接回傳
+  const cached = inMemoryUsers.get(clean);
+  if (cached) return cached;
 
-      if (!error && data) {
-        const cloudUser: AuthUser = {
-          id: data.id,
-          email: data.email.toLowerCase(),
-          passwordHash: data.password_hash || '',
-          name: data.name || clean.split('@')[0],
-          role: data.role === 'admin' ? 'admin' : 'user',
-          status: data.status === 'suspended' ? 'suspended' : 'active',
-          phone: data.phone || undefined,
-          company: data.company || undefined,
-          taxId: data.tax_id || undefined,
-          industry: data.industry || undefined,
-          address: data.address || undefined,
-          unlockedTiers: Array.isArray(data.unlocked_tiers)
-            ? data.unlocked_tiers
-            : ['free'],
-          createdAt: Number(data.created_at) || Date.now(),
-          lastLoginAt: data.last_login_at ? Number(data.last_login_at) : undefined,
-          provider: data.provider || 'credentials',
-          providerId: data.provider_id || undefined,
-        };
-
-        // 快取至記憶體
-        inMemoryUsers.set(clean, cloudUser);
-        return cloudUser;
+  // 3. 若快取無此人，嘗試向 GitHub 倉庫拉取最新資料庫
+  try {
+    const { users } = await fetchUsersFromGithub();
+    if (Array.isArray(users)) {
+      for (const u of users) {
+        const userEmail = (u.email || '').trim().toLowerCase();
+        if (userEmail) {
+          inMemoryUsers.set(userEmail, {
+            id: u.id,
+            email: userEmail,
+            passwordHash: u.passwordHash || '',
+            name: u.name || userEmail.split('@')[0],
+            role: u.role || 'user',
+            status: u.status || 'active',
+            phone: u.phone,
+            company: u.company,
+            taxId: u.taxId,
+            industry: u.industry,
+            address: u.address,
+            unlockedTiers: Array.isArray(u.unlockedTiers) ? u.unlockedTiers : ['free'],
+            createdAt: Number(u.createdAt) || Date.now(),
+            lastLoginAt: u.lastLoginAt ? Number(u.lastLoginAt) : undefined,
+            provider: u.provider || 'credentials',
+            providerId: u.providerId,
+          });
+        }
       }
-    } catch (err: any) {
-      console.warn('[auth-users] Supabase 查詢用戶異常，降級至記憶體:', err?.message);
     }
+  } catch (err: any) {
+    console.warn('[auth-users] 拉取 GitHub 倉庫會員異常:', err?.message);
   }
 
-  // 3. 降級自記憶體快取尋找（保證 opelwu2002@gmail.com 舊帳號可用）
   return inMemoryUsers.get(clean);
 }
 
@@ -206,7 +196,6 @@ export function findAuthUserById(id: string): AuthUser | undefined {
 
 /**
  * 驗證帳號與密碼 (支援 bcrypt 密碼比對、舊帳號無縫登入、管理員放行)
- * 絕不執行磁碟寫入，更新 lastLoginAt 僅在記憶體或雲端 DB 中執行
  */
 export async function verifyUserCredentials(
   accountOrEmail: string,
@@ -258,21 +247,9 @@ export async function verifyUserCredentials(
     return { success: false, error: '帳號或密碼錯誤' };
   }
 
-  // 5. 更新最後登入時間（記憶體更新 + 雲端同步，安全跳過本地磁碟）
+  // 5. 更新最後登入時間
   user.lastLoginAt = Date.now();
   inMemoryUsers.set(user.email.toLowerCase(), user);
-
-  const supabase = getSupabaseAdmin();
-  if (supabase) {
-    try {
-      await supabase
-        .from('users')
-        .update({ last_login_at: user.lastLoginAt })
-        .eq('id', user.id);
-    } catch {
-      // 雲端同步失敗不中斷登入
-    }
-  }
 
   return { success: true, user: toSafeAuthUser(user) };
 }
@@ -291,30 +268,16 @@ export async function upsertOAuthAuthUser(params: {
   let user = await findAuthUserByEmail(cleanEmail);
 
   if (user) {
-    // 使用者已存在：更新最後登入時間與名稱
     user.lastLoginAt = Date.now();
     if (params.name) user.name = params.name;
     user.provider = params.provider;
     if (params.providerId) user.providerId = params.providerId;
 
     inMemoryUsers.set(cleanEmail, user);
-
-    const supabase = getSupabaseAdmin();
-    if (supabase) {
-      try {
-        await supabase
-          .from('users')
-          .update({
-            last_login_at: user.lastLoginAt,
-            name: user.name,
-            provider: user.provider,
-            provider_id: user.providerId || null,
-          })
-          .eq('id', user.id);
-      } catch (err: any) {
-        console.warn('[auth-users] Supabase OAuth 更新失敗:', err?.message);
-      }
-    }
+    await commitUsersToGithub(
+      Array.from(inMemoryUsers.values()),
+      `chore(auth): 更新第三方登入資訊 (${cleanEmail}) [skip ci]`
+    );
 
     return toSafeAuthUser(user);
   }
@@ -336,32 +299,16 @@ export async function upsertOAuthAuthUser(params: {
   };
 
   inMemoryUsers.set(cleanEmail, newUser);
-
-  const supabase = getSupabaseAdmin();
-  if (supabase) {
-    try {
-      await supabase.from('users').insert({
-        id: newUser.id,
-        email: newUser.email,
-        name: newUser.name,
-        role: newUser.role,
-        status: newUser.status,
-        unlocked_tiers: newUser.unlockedTiers,
-        provider: newUser.provider,
-        provider_id: newUser.providerId || null,
-        created_at: newUser.createdAt,
-        last_login_at: newUser.lastLoginAt,
-      });
-    } catch (err: any) {
-      console.warn('[auth-users] Supabase OAuth 新增失敗:', err?.message);
-    }
-  }
+  await commitUsersToGithub(
+    Array.from(inMemoryUsers.values()),
+    `chore(auth): 新增第三方會員 (${cleanEmail}) [skip ci]`
+  );
 
   return toSafeAuthUser(newUser);
 }
 
 /**
- * 新增一般帳號密碼註冊會員 (完全記憶體與雲端化，絕不觸發 EROFS)
+ * 新增一般帳號密碼註冊會員 (對接 GitHub 倉庫持久化)
  */
 export async function createAuthUser(params: {
   email: string;
@@ -403,64 +350,23 @@ export async function createAuthUser(params: {
     provider: 'credentials',
   };
 
-  // 1. 若有配置雲端 Supabase 資料庫，必須強制成功寫入雲端！
-  const supabase = getSupabaseAdmin();
-  if (supabase) {
-    const insertPayload: any = {
-      id: newUser.id,
-      email: newUser.email,
-      password_hash: newUser.passwordHash,
-      name: newUser.name,
-      role: newUser.role,
-      status: newUser.status,
-      phone: newUser.phone,
-      company: newUser.company,
-      tax_id: newUser.taxId,
-      industry: newUser.industry,
-      address: newUser.address,
-      unlocked_tiers: newUser.unlockedTiers,
-      provider: newUser.provider,
-      created_at: newUser.createdAt,
-      last_login_at: newUser.lastLoginAt,
-    };
-
-    const { data: insertedRows, error: insertError } = await supabase
-      .from('users')
-      .insert(insertPayload)
-      .select('id');
-
-    if (insertError) {
-      console.error('[auth-users] Supabase 新增會員失敗:', insertError);
-
-      // 若錯誤為特定欄位不存在（例如 Supabase 尚未執行 ALTER TABLE）
-      if (
-        insertError.code === '42703' ||
-        (insertError.message &&
-          (insertError.message.includes('column') || insertError.message.includes('not exist')))
-      ) {
-        throw new Error(
-          `雲端資料庫尚未擴充新欄位（${insertError.message}）。請管理員至 Supabase SQL Editor 執行 database/migration_add_enterprise_fields.sql 遷移腳本以啟用完整功能。`
-        );
-      }
-
-      if (insertError.code === '23505') {
-        throw new Error('此電子郵件已被註冊');
-      }
-
-      throw new Error(`雲端資料庫會員寫入失敗：${insertError.message || '連線逾時或權限不足'}`);
-    }
-
-    if (!insertedRows || insertedRows.length === 0 || !insertedRows[0]?.id) {
-      throw new Error('雲端資料庫寫入失敗：未能確認寫入且未取得新記錄 ID');
-    }
-
-    // 確保使用雲端資料庫確認之 ID
-    newUser.id = insertedRows[0].id;
-  }
-
-  // 2. 雲端資料庫成功寫入後（或未配置雲端時），同步寫入本機記憶體與 users.json
+  // 1. 寫入記憶體
   inMemoryUsers.set(cleanEmail, newUser);
 
+  // 2. 提交更新至 GitHub 倉庫 (或本地磁碟降級)
+  const allUsersList = Array.from(inMemoryUsers.values());
+  const commitResult = await commitUsersToGithub(
+    allUsersList,
+    `feat(users): 新增會員註冊 ${newUser.name} (${cleanEmail}) [skip ci]`
+  );
+
+  if (!commitResult.success) {
+    // 提交失敗則撤回記憶體
+    inMemoryUsers.delete(cleanEmail);
+    throw new Error(`資料庫寫入失敗：${commitResult.error || '無法提交至 GitHub 儲存庫'}`);
+  }
+
+  // 3. 同步至 lib/db 資料結構
   try {
     upsertUser({
       id: newUser.id,
@@ -486,59 +392,58 @@ export async function createAuthUser(params: {
 }
 
 /**
- * 非同步取得所有認證會員（優先向 Supabase 撈取最新名單並快取）
+ * 非同步取得所有認證會員（優先向 GitHub 倉庫撈取最新名單並快取）
  */
 export async function getAllAuthUsersAsync(): Promise<SafeAuthUser[]> {
   initializeUsers();
-  const supabase = getSupabaseAdmin();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false });
 
-      if (!error && Array.isArray(data)) {
-        for (const row of data) {
-          const cleanEmail = (row.email || '').trim().toLowerCase();
-          if (!cleanEmail || cleanEmail === 'admin@omni-astrology.com') continue;
+  try {
+    const { users } = await fetchUsersFromGithub();
+    if (Array.isArray(users) && users.length > 0) {
+      for (const row of users) {
+        const cleanEmail = (row.email || '').trim().toLowerCase();
+        if (!cleanEmail || cleanEmail === 'admin@omni-astrology.com') continue;
 
-          const isMaster = cleanEmail === 'opelwu2002@gmail.com';
-          const user: AuthUser = {
-            id: row.id,
-            email: cleanEmail,
-            passwordHash: row.password_hash || '',
-            name: isMaster ? '吳俊彥' : row.name || cleanEmail.split('@')[0],
-            role: isMaster ? 'admin' : row.role === 'admin' ? 'admin' : 'user',
-            status: row.status === 'suspended' ? 'suspended' : 'active',
-            phone: row.phone || undefined,
-            company: row.company || undefined,
-            taxId: row.tax_id || undefined,
-            industry: row.industry || undefined,
-            address: row.address || undefined,
-            unlockedTiers: isMaster
-              ? ['free', 'level2', 'level3', 'synastry_addon']
-              : Array.isArray(row.unlocked_tiers)
-              ? row.unlocked_tiers
-              : ['free'],
-            createdAt: Number(row.created_at) || Date.now(),
-            lastLoginAt: row.last_login_at ? Number(row.last_login_at) : undefined,
-            provider: row.provider || 'credentials',
-            providerId: row.provider_id || undefined,
-          };
-          inMemoryUsers.set(cleanEmail, user);
-        }
+        const isMaster = cleanEmail === 'opelwu2002@gmail.com';
+        const user: AuthUser = {
+          id: row.id,
+          email: cleanEmail,
+          passwordHash: row.passwordHash || '',
+          name: isMaster ? '吳俊彥' : row.name || cleanEmail.split('@')[0],
+          role: isMaster ? 'admin' : row.role === 'admin' ? 'admin' : 'user',
+          status: row.status === 'suspended' ? 'suspended' : 'active',
+          phone: row.phone || undefined,
+          company: row.company || undefined,
+          taxId: row.taxId || undefined,
+          industry: row.industry || undefined,
+          address: row.address || undefined,
+          unlockedTiers: isMaster
+            ? ['free', 'level2', 'level3', 'synastry_addon']
+            : Array.isArray(row.unlockedTiers)
+            ? row.unlockedTiers
+            : ['free'],
+          createdAt: Number(row.createdAt) || Date.now(),
+          lastLoginAt: row.lastLoginAt ? Number(row.lastLoginAt) : undefined,
+          provider: row.provider || 'credentials',
+          providerId: row.providerId || undefined,
+        };
+        inMemoryUsers.set(cleanEmail, user);
       }
-    } catch (err: any) {
-      console.warn('[auth-users] Supabase 查詢全體用戶失敗:', err?.message);
     }
+  } catch (err: any) {
+    console.warn('[auth-users] GitHub 查詢全體用戶失敗:', err?.message);
+  }
+
+  // 確保最高管理者永遠存在
+  if (!inMemoryUsers.has('opelwu2002@gmail.com')) {
+    inMemoryUsers.set('opelwu2002@gmail.com', { ...MASTER_ADMIN_USER });
   }
 
   return Array.from(inMemoryUsers.values()).map(toSafeAuthUser);
 }
 
 /**
- * 取得所有安全使用者清單
+ * 取得所有安全使用者清單 (同步快取版)
  */
 export function getAllSafeAuthUsers(): SafeAuthUser[] {
   initializeUsers();
@@ -546,84 +451,51 @@ export function getAllSafeAuthUsers(): SafeAuthUser[] {
 }
 
 /**
- * 永久刪除認證會員（同步自記憶體與雲端移除）
+ * 刪除認證會員 (同步包裝)
  */
 export function deleteAuthUser(idOrEmail: string): void {
-  initializeUsers();
-  const target = (idOrEmail || '').trim().toLowerCase();
-  if (!target) return;
-
-  for (const [email, user] of inMemoryUsers.entries()) {
-    if (
-      user.id === idOrEmail ||
-      user.id.toLowerCase() === target ||
-      email === target
-    ) {
-      // 絕對保護系統最高管理者 opelwu2002@gmail.com
-      if (user.role === 'admin' || user.id === 'admin-master-001' || email === 'opelwu2002@gmail.com') {
-        continue;
-      }
-      inMemoryUsers.delete(email);
-    }
-  }
-
-  // 連動實體檔案 data/users.json 刪除
-  try {
-    deleteUser(idOrEmail);
-  } catch {}
-
-  // 同步刪除 Supabase 雲端資料庫（若有配置）
-  const supabase = getSupabaseAdmin();
-  if (supabase) {
-    try {
-      supabase
-        .from('users')
-        .delete()
-        .or(`id.eq.${idOrEmail},email.eq.${target}`)
-        .then(() => {});
-    } catch {}
-  }
+  deleteAuthUserAsync(idOrEmail).catch((err) => {
+    console.error('[auth-users] deleteAuthUser 異步操作錯誤:', err);
+  });
 }
 
 /**
- * 非同步永久刪除認證會員（強制真實 await 雲端 Supabase 資料庫）
+ * 非同步永久刪除認證會員（真實 commit 至 GitHub 倉庫）
  */
 export async function deleteAuthUserAsync(idOrEmail: string): Promise<void> {
   initializeUsers();
   const target = (idOrEmail || '').trim().toLowerCase();
   if (!target) return;
 
+  let deleted = false;
   for (const [email, user] of inMemoryUsers.entries()) {
     if (
       user.id === idOrEmail ||
       user.id.toLowerCase() === target ||
       email === target
     ) {
-      if (user.role === 'admin' || user.id === 'admin-master-001' || email === 'opelwu2002@gmail.com') {
+      if (
+        user.role === 'admin' ||
+        user.id === 'admin-master-001' ||
+        email === 'opelwu2002@gmail.com'
+      ) {
         continue;
       }
       inMemoryUsers.delete(email);
+      deleted = true;
     }
   }
 
-  // 連動實體檔案 data/users.json 刪除
+  // 同步連動 lib/db
   try {
     deleteUser(idOrEmail);
   } catch {}
 
-  const supabase = getSupabaseAdmin();
-  if (supabase) {
-    try {
-      const { error } = await supabase
-        .from('users')
-        .delete()
-        .or(`id.eq.${idOrEmail},email.eq.${target}`);
-      if (error) {
-        console.error('[auth-users] deleteAuthUserAsync 刪除失敗:', error);
-      }
-    } catch (err: any) {
-      console.error('[auth-users] deleteAuthUserAsync 異常:', err);
-    }
+  if (deleted) {
+    await commitUsersToGithub(
+      Array.from(inMemoryUsers.values()),
+      `chore(users): 刪除會員 ${idOrEmail} [skip ci]`
+    );
   }
 }
 
@@ -635,6 +507,7 @@ export function updateAuthUserTiers(idOrEmail: string, tiers: string[]): void {
   const target = (idOrEmail || '').trim().toLowerCase();
   if (!target) return;
 
+  let updated = false;
   for (const [email, user] of inMemoryUsers.entries()) {
     if (
       user.id === idOrEmail ||
@@ -643,19 +516,16 @@ export function updateAuthUserTiers(idOrEmail: string, tiers: string[]): void {
     ) {
       user.unlockedTiers = Array.isArray(tiers) ? [...tiers] : ['free'];
       inMemoryUsers.set(email, user);
+      updated = true;
     }
   }
 
-  const supabase = getSupabaseAdmin();
-  if (supabase) {
-    try {
-      supabase
-        .from('users')
-        .update({ unlocked_tiers: tiers })
-        .or(`id.eq.${idOrEmail},email.eq.${target}`)
-        .then(() => {});
-    } catch {}
+  if (updated) {
+    commitUsersToGithub(
+      Array.from(inMemoryUsers.values()),
+      `chore(users): 更新會員 ${idOrEmail} 權限為 [${tiers.join(', ')}] [skip ci]`
+    ).catch((err) => {
+      console.warn('[auth-users] updateAuthUserTiers 提交失敗:', err?.message);
+    });
   }
 }
-
-

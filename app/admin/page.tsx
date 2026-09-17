@@ -274,7 +274,7 @@ export default function AdminPage() {
         setUsersList(data.users);
         setUsersError(null);
       } else {
-        setUsersError(data.error || '無法讀取會員清單，請確認雲端資料庫狀態');
+        setUsersError(data.error || '無法讀取會員清單，請確認資料儲存庫狀態');
       }
     } catch (err: any) {
       console.error('[admin/fetchUsers] 異常:', err);

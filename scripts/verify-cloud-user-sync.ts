@@ -92,31 +92,29 @@ async function runTests() {
     assert(dupErrorThrown, '重複 Email 必須被攔截並拋出錯誤');
     console.log('✅ 測試 5 通過：重複 Email 嚴格拋錯\n');
 
-    // 測試 6：檢驗後台 API 100% 直連 Supabase 雲端資料庫，徹底杜絕本機 users.json fallback
-    console.log('▶ 測試 6：檢驗 app/api/admin/users/route.ts 100% 直連 Supabase 雲端資料庫...');
+    // 測試 6：檢驗後台 API 100% 直連 GitHub 雲端資料庫存取層
+    console.log('▶ 測試 6：檢驗 app/api/admin/users/route.ts 100% 直連 GitHub 雲端資料庫...');
     const adminUsersRoutePath = path.join(process.cwd(), 'app', 'api', 'admin', 'users', 'route.ts');
     const adminUsersRouteCode = fs.readFileSync(adminUsersRoutePath, 'utf-8');
-    assert(adminUsersRouteCode.includes(".from('users')") && adminUsersRouteCode.includes(".select('*')"), "後台 GET 必須直連 .from('users') 並 .select('*')");
-    assert(!adminUsersRouteCode.includes('getUsersAsync()'), '後台 GET 嚴禁使用本機 getUsersAsync() 作為 fallback');
+    assert(adminUsersRouteCode.includes('getAllAuthUsersAsync()'), "後台 GET 必須直連 getAllAuthUsersAsync()");
+    assert(adminUsersRouteCode.includes('commitUsersToGithub'), "後台 必須呼叫 commitUsersToGithub");
     assert(adminUsersRouteCode.includes('phone'), '後台 POST 必須解構 phone');
     assert(adminUsersRouteCode.includes('company'), '後台 POST 必須解構 company');
-    console.log('✅ 測試 6 通過：後台 API 100% 直連真實雲端 Supabase，零本機 fallback\n');
+    console.log('✅ 測試 6 通過：後台 API 100% 直連 GitHub 雲端儲存庫，零 Supabase 依賴\n');
 
-    // 測試 7：檢驗後台統計 API 嚴禁使用本機 getUsersAsync()，改為直接對接 Supabase
-    console.log('▶ 測試 7：檢驗 app/api/admin/stats/route.ts 直連 Supabase 且無本機 fallback...');
+    // 測試 7：檢驗後台統計 API 直連單一事實來源
+    console.log('▶ 測試 7：檢驗 app/api/admin/stats/route.ts 直連單一資料源...');
     const adminStatsRoutePath = path.join(process.cwd(), 'app', 'api', 'admin', 'stats', 'route.ts');
     const adminStatsRouteCode = fs.readFileSync(adminStatsRoutePath, 'utf-8');
-    assert(adminStatsRouteCode.includes('getSupabaseAdmin()'), '後台統計 API 必須直連 getSupabaseAdmin()');
-    assert(!adminStatsRouteCode.includes('getUsersAsync()'), '後台統計 API 嚴禁呼叫本機 getUsersAsync()');
-    console.log('✅ 測試 7 通過：後台統計 API 零本機 fallback\n');
+    assert(adminStatsRouteCode.includes('getAllAuthUsersAsync()'), '後台統計 API 必須直連 getAllAuthUsersAsync()');
+    console.log('✅ 測試 7 通過：後台統計 API 零脫節\n');
 
-    // 測試 8：檢驗註冊 API 原子性防護（嚴禁未配置 Supabase 時假性成功派發 Token）
+    // 測試 8：檢驗註冊 API 原子性防護
     console.log('▶ 測試 8：檢驗 app/api/auth/register/route.ts 註冊原子性防護...');
     const registerRoutePath = path.join(process.cwd(), 'app', 'api', 'auth', 'register', 'route.ts');
     const registerRouteCode = fs.readFileSync(registerRoutePath, 'utf-8');
-    assert(registerRouteCode.includes('getSupabaseAdmin()'), '註冊 API 必須強制檢查 getSupabaseAdmin()');
-    assert(registerRouteCode.includes('status: 500'), '未配置或資料庫寫入失敗時必須回傳 500 錯誤中斷流程');
-    assert(registerRouteCode.includes('資料庫寫入失敗，請確認雲端資料庫配置'), '未配置時必須回傳精確防呆錯誤文案');
+    assert(registerRouteCode.includes('createAuthUser'), '註冊 API 必須呼叫 createAuthUser()');
+    assert(registerRouteCode.includes('status: isDbError ? 500 : 400') || registerRouteCode.includes('status: 500'), '資料庫寫入失敗時必須回傳 500 錯誤中斷流程');
     console.log('✅ 測試 8 通過：註冊 API 具備完整原子性防護，嚴禁虛假註冊成功\n');
   } finally {
     // 清理作業：移除測試會員資料，嚴防污染正式儲存庫 users.json

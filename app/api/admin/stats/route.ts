@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { getSystemStats } from '@/lib/db';
-import { getSupabaseAdmin } from '@/lib/db/supabase';
+import { getAllAuthUsersAsync } from '@/lib/auth-users';
 
 export async function GET(request: Request) {
   try {
@@ -18,21 +18,15 @@ export async function GET(request: Request) {
     let activeUsers = 0;
     let adminCount = 0;
 
-    const supabase = getSupabaseAdmin();
-    if (supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('users')
-          .select('id, role, status');
-
-        if (!error && Array.isArray(data)) {
-          totalUsers = data.length;
-          activeUsers = data.filter((u) => u.status === 'active').length;
-          adminCount = data.filter((u) => u.role === 'admin').length;
-        }
-      } catch (err: any) {
-        console.warn('[admin/stats] 讀取 Supabase 用戶統計失敗:', err?.message);
+    try {
+      const users = await getAllAuthUsersAsync();
+      if (Array.isArray(users)) {
+        totalUsers = users.length;
+        activeUsers = users.filter((u) => u.status === 'active').length;
+        adminCount = users.filter((u) => u.role === 'admin').length;
       }
+    } catch (err: any) {
+      console.warn('[admin/stats] 讀取會員統計失敗:', err?.message);
     }
 
     return NextResponse.json({

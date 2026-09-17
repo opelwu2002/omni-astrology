@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 自動化驗證腳本：BI 戰情室與會員深度管理單一資料源 (Single Source of Truth) 檢驗
  * 執行命令：npx tsx scripts/verify-single-source-of-truth.ts
  */
@@ -91,8 +91,8 @@ function runTests() {
     'stats API 路由嚴禁呼叫 getUsersAsync() 讀取本地舊 JSON'
   );
   testAssert(
-    statsRouteCode.includes('getSupabaseAdmin()'),
-    'stats API 路由直接對齊 getSupabaseAdmin()'
+    statsRouteCode.includes('getAllAuthUsersAsync()'),
+    'stats API 路由直接對齊 getAllAuthUsersAsync()'
   );
 
   // 【測試 6：單一事實來源衍生運算邏輯模擬】
