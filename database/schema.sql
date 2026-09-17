@@ -13,6 +13,11 @@ CREATE TABLE IF NOT EXISTS users (
   role VARCHAR(20) DEFAULT 'user', -- 'user' | 'admin'
   status VARCHAR(20) DEFAULT 'active', -- 'active' | 'suspended'
   unlocked_tiers JSONB DEFAULT '["free"]'::jsonb, -- ['free', 'level2', 'level3', 'synastry_addon']
+  phone VARCHAR(50), -- 連絡電話
+  company VARCHAR(255), -- 服務公司 / 學校
+  tax_id VARCHAR(20), -- 統一編號 8 碼
+  industry VARCHAR(100), -- 行業分類
+  address TEXT, -- 憑證寄送通訊地址
   provider VARCHAR(50) DEFAULT 'credentials', -- 'credentials' | 'google' | 'github' | 'line'
   provider_id VARCHAR(255),
   created_at BIGINT NOT NULL,
@@ -21,6 +26,8 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);
+CREATE INDEX IF NOT EXISTS idx_users_phone ON users (phone);
+CREATE INDEX IF NOT EXISTS idx_users_tax_id ON users (tax_id);
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON users (created_at DESC);
 
 -- 3. 雲端命盤存檔表 (user_profiles)

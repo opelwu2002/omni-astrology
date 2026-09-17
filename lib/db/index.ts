@@ -288,8 +288,69 @@ function initStats(): SystemStats {
   return initialStats;
 }
 
-// 讀取所有會員
+// 讀取所有會員 (同步快取)
 export function getUsers(): User[] {
+  return initUsers();
+}
+
+/**
+ * 非同步讀取所有會員（優先連線 Supabase 雲端資料庫撈取最新名單，若離線或無配置則自動降級至記憶體快取）
+ */
+export async function getUsersAsync(): Promise<User[]> {
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        const currentList = initUsers();
+        const mergedMap = new Map<string, User>();
+        // 先放入本機種子會員
+        for (const u of currentList) {
+          mergedMap.set(u.email.toLowerCase(), u);
+        }
+        // 雲端資料庫覆蓋/新增最新會員資料
+        for (const row of data) {
+          const cleanEmail = (row.email || '').trim().toLowerCase();
+          if (!cleanEmail || cleanEmail === 'admin@omni-astrology.com') continue;
+
+          const isMaster = cleanEmail === 'opelwu2002@gmail.com';
+          const user: User = {
+            id: row.id,
+            email: cleanEmail,
+            passwordHash: row.password_hash || '',
+            name: isMaster ? '吳俊彥' : row.name || cleanEmail.split('@')[0],
+            role: isMaster ? 'admin' : row.role === 'admin' ? 'admin' : 'user',
+            status: row.status === 'suspended' ? 'suspended' : 'active',
+            phone: row.phone || undefined,
+            company: row.company || undefined,
+            taxId: row.tax_id || undefined,
+            industry: row.industry || undefined,
+            address: row.address || undefined,
+            unlockedTiers: isMaster
+              ? ['free', 'level2', 'level3', 'synastry_addon']
+              : Array.isArray(row.unlocked_tiers)
+              ? row.unlocked_tiers
+              : ['free'],
+            createdAt: Number(row.created_at) || Date.now(),
+            lastLoginAt: row.last_login_at ? Number(row.last_login_at) : undefined,
+          };
+          mergedMap.set(cleanEmail, user);
+        }
+        const mergedList = Array.from(mergedMap.values());
+        mergedList.sort((a, b) => b.createdAt - a.createdAt);
+        cachedUsers = mergedList;
+        return mergedList;
+      } else if (error) {
+        console.warn('[db] Supabase getUsersAsync 查詢回傳錯誤:', error.message);
+      }
+    } catch (err: any) {
+      console.warn('[db] getUsersAsync 讀取 Supabase 異常:', err?.message);
+    }
+  }
   return initUsers();
 }
 
@@ -496,6 +557,40 @@ export function adminCreateUser(params: {
 
   users.unshift(newUser);
   saveUsers(users);
+
+  // 同步寫入雲端 Supabase（若有配置）
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        supabase
+          .from('users')
+          .insert({
+            id: newUser.id,
+            email: newUser.email,
+            password_hash: newUser.passwordHash,
+            name: newUser.name,
+            role: newUser.role,
+            status: newUser.status,
+            phone: newUser.phone,
+            company: newUser.company,
+            tax_id: newUser.taxId,
+            industry: newUser.industry,
+            address: newUser.address,
+            unlocked_tiers: newUser.unlockedTiers,
+            provider: 'credentials',
+            created_at: newUser.createdAt,
+            last_login_at: newUser.lastLoginAt,
+          })
+          .then(({ error }) => {
+            if (error) console.warn('[db] adminCreateUser 同步 Supabase 警告:', error.message);
+          });
+      }
+    } catch (err: any) {
+      console.warn('[db] adminCreateUser 同步 Supabase 異常:', err?.message);
+    }
+  }
+
   return toSafeUser(newUser);
 }
 
@@ -536,6 +631,39 @@ export function adminUpdateUser(
   }
 
   saveUsers(users);
+
+  // 同步更新雲端 Supabase（若有配置）
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const updatePayload: any = {};
+        if (params.name !== undefined) updatePayload.name = params.name;
+        if (params.role !== undefined) updatePayload.role = params.role;
+        if (params.status !== undefined) updatePayload.status = params.status;
+        if (params.phone !== undefined) updatePayload.phone = params.phone;
+        if (params.company !== undefined) updatePayload.company = params.company;
+        if (params.taxId !== undefined) updatePayload.tax_id = params.taxId;
+        if (params.industry !== undefined) updatePayload.industry = params.industry;
+        if (params.address !== undefined) updatePayload.address = params.address;
+        if (params.unlockedTiers !== undefined) updatePayload.unlocked_tiers = params.unlockedTiers;
+        if (params.password && params.password.trim().length >= 6) {
+          updatePayload.password_hash = users[idx].passwordHash;
+        }
+
+        supabase
+          .from('users')
+          .update(updatePayload)
+          .eq('id', id)
+          .then(({ error }) => {
+            if (error) console.warn('[db] adminUpdateUser 同步 Supabase 警告:', error.message);
+          });
+      }
+    } catch (err: any) {
+      console.warn('[db] adminUpdateUser 同步 Supabase 異常:', err?.message);
+    }
+  }
+
   return toSafeUser(users[idx]);
 }
 

@@ -1,5 +1,23 @@
 [
   {
+    "id": "user-1789607206204-24rs4",
+    "email": "huang.kl.1789607206041@omni-enterprise.tw",
+    "passwordHash": "$2b$10$GuAGchnYZJw.8wJorEQTce0jzxgA5JZ47UKJx0YJtxGKYSlFV9mO2",
+    "name": "黃光隆",
+    "role": "user",
+    "status": "active",
+    "phone": "0912345678",
+    "company": "大隆精密工業股份有限公司",
+    "taxId": "12345678",
+    "industry": "製造業（如石化、鋼鐵、水泥、半導體等）",
+    "address": "台中市南屯區精科路 88 號",
+    "unlockedTiers": [
+      "free"
+    ],
+    "createdAt": 1789607206204,
+    "lastLoginAt": 1789607206204
+  },
+  {
     "id": "user-1789565978547-v7nxp",
     "email": "peirung1121@gmail.com",
     "passwordHash": "$2b$10$jj7RPsSejFFmYugAr4jIJOKPlsdMMVSmjWPLxrwU2I/ayj1xPZdE6",

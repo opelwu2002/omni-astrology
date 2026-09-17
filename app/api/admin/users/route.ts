@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import {
   getUsers,
+  getUsersAsync,
   toSafeUser,
   adminCreateUser,
   adminUpdateUser,
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const allUsers = getUsers().map(toSafeUser);
+    const allUsers = (await getUsersAsync()).map(toSafeUser);
     return NextResponse.json({ success: true, users: allUsers });
   } catch (error: any) {
     return NextResponse.json(
@@ -43,7 +44,19 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { email, password, name, role, status, unlockedTiers } = body;
+    const {
+      email,
+      password,
+      name,
+      role,
+      status,
+      unlockedTiers,
+      phone,
+      company,
+      taxId,
+      industry,
+      address,
+    } = body;
 
     if (!email || !password) {
       return NextResponse.json(
@@ -63,6 +76,11 @@ export async function POST(request: Request) {
       email,
       password,
       name,
+      phone,
+      company,
+      taxId,
+      industry,
+      address,
       role: role || 'user',
       status: status || 'active',
       unlockedTiers: unlockedTiers || ['free'],
@@ -91,7 +109,7 @@ export async function POST(request: Request) {
   }
 }
 
-// 修改會員資料（包含狀態、角色、密碼重設、解鎖方案）
+// 修改會員資料（包含狀態、角色、密碼重設、解鎖方案與企業資料）
 export async function PATCH(request: Request) {
   try {
     const user = getCurrentUserFromRequest(request);
@@ -103,7 +121,19 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const { targetUserId, name, role, status, password, unlockedTiers } = body;
+    const {
+      targetUserId,
+      name,
+      role,
+      status,
+      password,
+      unlockedTiers,
+      phone,
+      company,
+      taxId,
+      industry,
+      address,
+    } = body;
 
     if (!targetUserId) {
       return NextResponse.json(
@@ -118,6 +148,11 @@ export async function PATCH(request: Request) {
       status,
       password,
       unlockedTiers,
+      phone,
+      company,
+      taxId,
+      industry,
+      address,
     });
 
     // 即時同步至認證層快取

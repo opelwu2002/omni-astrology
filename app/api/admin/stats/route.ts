@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/auth';
-import { getSystemStats, getUsers } from '@/lib/db';
+import { getSystemStats, getUsersAsync } from '@/lib/db';
 
 export async function GET(request: Request) {
   try {
@@ -12,8 +12,8 @@ export async function GET(request: Request) {
       );
     }
 
+    const allUsers = await getUsersAsync();
     const stats = getSystemStats();
-    const allUsers = getUsers();
 
     const totalUsers = allUsers.length;
     const activeUsers = allUsers.filter((u) => u.status === 'active').length;

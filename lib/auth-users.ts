@@ -159,6 +159,11 @@ export async function findAuthUserByEmail(email: string): Promise<AuthUser | und
           name: data.name || clean.split('@')[0],
           role: data.role === 'admin' ? 'admin' : 'user',
           status: data.status === 'suspended' ? 'suspended' : 'active',
+          phone: data.phone || undefined,
+          company: data.company || undefined,
+          taxId: data.tax_id || undefined,
+          industry: data.industry || undefined,
+          address: data.address || undefined,
           unlockedTiers: Array.isArray(data.unlocked_tiers)
             ? data.unlocked_tiers
             : ['free'],
@@ -391,9 +396,54 @@ export async function createAuthUser(params: {
     provider: 'credentials',
   };
 
+  // 1. 若有配置雲端 Supabase 資料庫，必須強制成功寫入雲端！
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    const insertPayload: any = {
+      id: newUser.id,
+      email: newUser.email,
+      password_hash: newUser.passwordHash,
+      name: newUser.name,
+      role: newUser.role,
+      status: newUser.status,
+      phone: newUser.phone,
+      company: newUser.company,
+      tax_id: newUser.taxId,
+      industry: newUser.industry,
+      address: newUser.address,
+      unlocked_tiers: newUser.unlockedTiers,
+      provider: newUser.provider,
+      created_at: newUser.createdAt,
+      last_login_at: newUser.lastLoginAt,
+    };
+
+    const { error: insertError } = await supabase.from('users').insert(insertPayload);
+
+    if (insertError) {
+      console.error('[auth-users] Supabase 新增會員失敗:', insertError);
+
+      // 若錯誤為特定欄位不存在（例如 Supabase 尚未執行 ALTER TABLE）
+      if (
+        insertError.code === '42703' ||
+        (insertError.message &&
+          (insertError.message.includes('column') || insertError.message.includes('not exist')))
+      ) {
+        throw new Error(
+          `雲端資料庫尚未擴充新欄位（${insertError.message}）。請管理員至 Supabase SQL Editor 執行 database/migration_add_enterprise_fields.sql 遷移腳本以啟用完整功能。`
+        );
+      }
+
+      if (insertError.code === '23505') {
+        throw new Error('此電子郵件已被註冊');
+      }
+
+      throw new Error(`雲端資料庫會員寫入失敗：${insertError.message || '連線逾時或權限不足'}`);
+    }
+  }
+
+  // 2. 雲端資料庫成功寫入後（或未配置雲端時），同步寫入本機記憶體與 users.json
   inMemoryUsers.set(cleanEmail, newUser);
 
-  // 同步寫入 users.json 儲存庫，徹底修復新註冊會員與後台名單脫鉤的問題！
   try {
     upsertUser({
       id: newUser.id,
@@ -415,33 +465,59 @@ export async function createAuthUser(params: {
     console.warn('[auth-users] 同步寫入 users.json 容錯通知:', err?.message);
   }
 
-  // 同步寫入雲端 Supabase（若有配置）
+  return toSafeAuthUser(newUser);
+}
+
+/**
+ * 非同步取得所有認證會員（優先向 Supabase 撈取最新名單並快取）
+ */
+export async function getAllAuthUsersAsync(): Promise<SafeAuthUser[]> {
+  initializeUsers();
   const supabase = getSupabaseAdmin();
   if (supabase) {
     try {
-      await supabase.from('users').insert({
-        id: newUser.id,
-        email: newUser.email,
-        password_hash: newUser.passwordHash,
-        name: newUser.name,
-        role: newUser.role,
-        status: newUser.status,
-        phone: newUser.phone,
-        company: newUser.company,
-        tax_id: newUser.taxId,
-        industry: newUser.industry,
-        address: newUser.address,
-        unlocked_tiers: newUser.unlockedTiers,
-        provider: newUser.provider,
-        created_at: newUser.createdAt,
-        last_login_at: newUser.lastLoginAt,
-      });
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        for (const row of data) {
+          const cleanEmail = (row.email || '').trim().toLowerCase();
+          if (!cleanEmail || cleanEmail === 'admin@omni-astrology.com') continue;
+
+          const isMaster = cleanEmail === 'opelwu2002@gmail.com';
+          const user: AuthUser = {
+            id: row.id,
+            email: cleanEmail,
+            passwordHash: row.password_hash || '',
+            name: isMaster ? '吳俊彥' : row.name || cleanEmail.split('@')[0],
+            role: isMaster ? 'admin' : row.role === 'admin' ? 'admin' : 'user',
+            status: row.status === 'suspended' ? 'suspended' : 'active',
+            phone: row.phone || undefined,
+            company: row.company || undefined,
+            taxId: row.tax_id || undefined,
+            industry: row.industry || undefined,
+            address: row.address || undefined,
+            unlockedTiers: isMaster
+              ? ['free', 'level2', 'level3', 'synastry_addon']
+              : Array.isArray(row.unlocked_tiers)
+              ? row.unlocked_tiers
+              : ['free'],
+            createdAt: Number(row.created_at) || Date.now(),
+            lastLoginAt: row.last_login_at ? Number(row.last_login_at) : undefined,
+            provider: row.provider || 'credentials',
+            providerId: row.provider_id || undefined,
+          };
+          inMemoryUsers.set(cleanEmail, user);
+        }
+      }
     } catch (err: any) {
-      console.warn('[auth-users] Supabase 新增會員失敗:', err?.message);
+      console.warn('[auth-users] Supabase 查詢全體用戶失敗:', err?.message);
     }
   }
 
-  return toSafeAuthUser(newUser);
+  return Array.from(inMemoryUsers.values()).map(toSafeAuthUser);
 }
 
 /**
