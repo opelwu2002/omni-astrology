@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/auth';
-import { getSystemStats, getUsersAsync } from '@/lib/db';
+import { getSystemStats } from '@/lib/db';
+import { getSupabaseAdmin } from '@/lib/db/supabase';
 
 export async function GET(request: Request) {
   try {
@@ -12,12 +13,27 @@ export async function GET(request: Request) {
       );
     }
 
-    const allUsers = await getUsersAsync();
     const stats = getSystemStats();
+    let totalUsers = 0;
+    let activeUsers = 0;
+    let adminCount = 0;
 
-    const totalUsers = allUsers.length;
-    const activeUsers = allUsers.filter((u) => u.status === 'active').length;
-    const adminCount = allUsers.filter((u) => u.role === 'admin').length;
+    const supabase = getSupabaseAdmin();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, role, status');
+
+        if (!error && Array.isArray(data)) {
+          totalUsers = data.length;
+          activeUsers = data.filter((u) => u.status === 'active').length;
+          adminCount = data.filter((u) => u.role === 'admin').length;
+        }
+      } catch (err: any) {
+        console.warn('[admin/stats] 讀取 Supabase 用戶統計失敗:', err?.message);
+      }
+    }
 
     return NextResponse.json({
       success: true,

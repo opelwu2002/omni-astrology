@@ -102,12 +102,13 @@ async function runTests() {
     assert(adminUsersRouteCode.includes('company'), '後台 POST 必須解構 company');
     console.log('✅ 測試 6 通過：後台 API 100% 直連真實雲端 Supabase，零本機 fallback\n');
 
-    // 測試 7：檢驗後台統計 API 代碼中 GET 必須使用 await getUsersAsync()
-    console.log('▶ 測試 7：檢驗 app/api/admin/stats/route.ts 使用非同步雲端讀取...');
+    // 測試 7：檢驗後台統計 API 嚴禁使用本機 getUsersAsync()，改為直接對接 Supabase
+    console.log('▶ 測試 7：檢驗 app/api/admin/stats/route.ts 直連 Supabase 且無本機 fallback...');
     const adminStatsRoutePath = path.join(process.cwd(), 'app', 'api', 'admin', 'stats', 'route.ts');
     const adminStatsRouteCode = fs.readFileSync(adminStatsRoutePath, 'utf-8');
-    assert(adminStatsRouteCode.includes('await getUsersAsync()'), '後台統計 GET 必須呼叫 await getUsersAsync()');
-    console.log('✅ 測試 7 通過：後台統計 API 連接非同步資料庫\n');
+    assert(adminStatsRouteCode.includes('getSupabaseAdmin()'), '後台統計 API 必須直連 getSupabaseAdmin()');
+    assert(!adminStatsRouteCode.includes('getUsersAsync()'), '後台統計 API 嚴禁呼叫本機 getUsersAsync()');
+    console.log('✅ 測試 7 通過：後台統計 API 零本機 fallback\n');
 
     // 測試 8：檢驗註冊 API 原子性防護（嚴禁未配置 Supabase 時假性成功派發 Token）
     console.log('▶ 測試 8：檢驗 app/api/auth/register/route.ts 註冊原子性防護...');

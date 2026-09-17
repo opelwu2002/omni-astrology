@@ -135,6 +135,7 @@ export default function AdminPage() {
     type: 'success' | 'error';
     text: string;
   } | null>(null);
+  const [usersError, setUsersError] = useState<string | null>(null);
 
   // Modal 控制狀態
   const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
@@ -261,7 +262,7 @@ export default function AdminPage() {
     }
   }, [token]);
 
-  // 讀取會員清單
+  // 讀取會員清單（Single Source of Truth：全站會員數據與戰情室唯一源頭）
   const fetchUsers = useCallback(async () => {
     if (!token) return;
     try {
@@ -269,11 +270,15 @@ export default function AdminPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      if (data.success) {
+      if (data.success && Array.isArray(data.users)) {
         setUsersList(data.users);
+        setUsersError(null);
+      } else {
+        setUsersError(data.error || '無法讀取會員清單，請確認雲端資料庫狀態');
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('[admin/fetchUsers] 異常:', err);
+      setUsersError('伺服器連線異常，無法載入會員資料');
     }
   }, [token]);
 
@@ -1122,6 +1127,34 @@ export default function AdminPage() {
     }
   };
 
+  // 戰情室專屬：100% 衍生自會員清單 usersList 之真實指標（Single Source of Truth，杜絕任何脫節）
+  const userMetrics = useMemo(() => {
+    const total = usersList.length;
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+    const todayNew = usersList.filter((u) => {
+      const ct = Number(u.createdAt);
+      return !isNaN(ct) && ct >= todayStart;
+    }).length;
+
+    const growthRate = total > 0 ? Number(((todayNew / total) * 100).toFixed(1)) : 0;
+
+    // 依實際擁有的非 free 解鎖權限計算付費會員轉換率
+    const payingCount = usersList.filter(
+      (u) => u.unlockedTiers && u.unlockedTiers.some((t) => t !== 'free')
+    ).length;
+    const conversionRate = total > 0 ? Number(((payingCount / total) * 100).toFixed(1)) : 0;
+
+    return {
+      total,
+      todayNew,
+      growthRate,
+      payingCount,
+      conversionRate,
+    };
+  }, [usersList]);
+
   // 篩選後會員清單（支援姓名、Email、公司、統編、電話、地址與行業關鍵字全面檢索）
   const filteredUsers = useMemo(() => {
     return usersList.filter((u) => {
@@ -1178,10 +1211,11 @@ export default function AdminPage() {
   // SVG 7日走勢圖計算
   const chartData = useMemo(() => {
     if (!stats?.dailyRevenue7Days || stats.dailyRevenue7Days.length === 0) {
-      return { points: '', pointsArr: [], maxAmount: 1000 };
+      return { points: '', pointsArr: [], maxAmount: 1000, realMax: 0 };
     }
     const days = stats.dailyRevenue7Days;
-    const maxAmount = Math.max(...days.map((d) => d.amount), 1000);
+    const realMax = Math.max(...days.map((d) => d.amount), 0);
+    const maxAmount = realMax > 0 ? realMax : 1000;
     const width = 500;
     const height = 160;
     const paddingX = 35;
@@ -1195,7 +1229,7 @@ export default function AdminPage() {
     });
 
     const points = pointsArr.map((p) => `${p.x},${p.y}`).join(' ');
-    return { points, pointsArr, maxAmount };
+    return { points, pointsArr, maxAmount, realMax };
   }, [stats]);
 
   if (!mounted) return null;
@@ -1493,6 +1527,26 @@ export default function AdminPage() {
           </button>
         </div>
 
+        {/* 全域會員資料庫狀態警報 */}
+        {usersError && (
+          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl flex items-center justify-between gap-3 text-rose-300 text-xs">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-400" />
+              <div>
+                <p className="font-bold text-sm text-rose-200">會員雲端資料庫讀取異常通知</p>
+                <p className="text-rose-300/80 mt-0.5">{usersError}</p>
+              </div>
+            </div>
+            <button
+              onClick={fetchUsers}
+              className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 rounded-xl transition flex items-center gap-1.5 font-medium cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>重新整理清單</span>
+            </button>
+          </div>
+        )}
+
         {/* TAB 1: BI 戰情室 */}
         {activeTab === 'stats' && (
           <div className="space-y-6">
@@ -1507,17 +1561,17 @@ export default function AdminPage() {
                 </div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl sm:text-3xl font-bold text-white font-mono">
-                    {stats?.totalUsers || usersList.length}
+                    {userMetrics.total}
                   </span>
                   <span className="text-xs text-slate-400">人</span>
                 </div>
                 <div className="mt-2.5 flex items-center gap-1.5 text-xs">
                   <span className="inline-flex items-center gap-0.5 text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded text-[11px] font-medium">
                     <TrendingUp className="w-3 h-3" />
-                    +{stats?.todayNewUsers ?? 1} 今日新增
+                    +{userMetrics.todayNew} 今日新增
                   </span>
                   <span className="text-slate-500 text-[11px]">
-                    (成長率 +{stats?.userGrowthRate ?? 0}%)
+                    (成長率 +{userMetrics.growthRate}%)
                   </span>
                 </div>
               </div>
@@ -1551,11 +1605,11 @@ export default function AdminPage() {
                 </div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl sm:text-3xl font-bold text-emerald-400 font-mono">
-                    {stats?.conversionRate ?? 18}%
+                    {userMetrics.conversionRate}%
                   </span>
                 </div>
                 <div className="mt-2.5 text-[11px] text-slate-400">
-                  以擁有高階/初階解鎖權限之會員佔比計算
+                  以擁有初階/高階解鎖權限之實名會員佔比計算 ({userMetrics.payingCount} / {userMetrics.total} 人)
                 </div>
               </div>
 
@@ -1603,7 +1657,7 @@ export default function AdminPage() {
                     </p>
                   </div>
                   <span className="text-xs font-mono text-amber-300/80 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                    最高單日：NT$ {chartData.maxAmount.toLocaleString()}
+                    最高單日：NT$ {chartData.realMax.toLocaleString()}
                   </span>
                 </div>
 
@@ -1689,13 +1743,13 @@ export default function AdminPage() {
                           className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-500"
                           style={{
                             width: `${
-                              stats?.totalRevenue
+                              stats?.totalRevenue && stats.totalRevenue > 0
                                 ? Math.round(
                                     ((stats?.tierSalesStats?.level3?.revenue ?? 0) /
                                       stats.totalRevenue) *
                                       100
                                   )
-                                : 75
+                                : 0
                             }%`,
                           }}
                         />
@@ -1715,13 +1769,13 @@ export default function AdminPage() {
                           className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full transition-all duration-500"
                           style={{
                             width: `${
-                              stats?.totalRevenue
+                              stats?.totalRevenue && stats.totalRevenue > 0
                                 ? Math.round(
                                     ((stats?.tierSalesStats?.level2?.revenue ?? 0) /
                                       stats.totalRevenue) *
                                       100
                                   )
-                                : 20
+                                : 0
                             }%`,
                           }}
                         />
@@ -1741,13 +1795,13 @@ export default function AdminPage() {
                           className="h-full bg-gradient-to-r from-purple-500 to-purple-400 rounded-full transition-all duration-500"
                           style={{
                             width: `${
-                              stats?.totalRevenue
+                              stats?.totalRevenue && stats.totalRevenue > 0
                                 ? Math.round(
                                     ((stats?.tierSalesStats?.synastry_addon?.revenue ?? 0) /
                                       stats.totalRevenue) *
                                       100
                                   )
-                                : 5
+                                : 0
                             }%`,
                           }}
                         />
@@ -1759,7 +1813,7 @@ export default function AdminPage() {
                 <div className="pt-4 border-t border-slate-800 text-xs text-slate-400 flex items-center justify-between">
                   <span>累計測算總次數：</span>
                   <span className="font-mono text-white font-bold">
-                    {(stats?.totalCalculations ?? 3824).toLocaleString()} 次
+                    {(stats?.totalCalculations ?? 0).toLocaleString()} 次
                   </span>
                 </div>
               </div>
