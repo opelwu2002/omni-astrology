@@ -29,6 +29,7 @@ import {
 } from '@/types/auth';
 import Footer from '@/components/Footer';
 import AuthModal from '@/components/auth/AuthModal';
+import UserEditModal from '@/components/admin/UserEditModal';
 import {
   ShieldCheck,
   Users,
@@ -1969,32 +1970,40 @@ export default function AdminPage() {
                           </td>
                           <td className="py-3 px-4">
                             <div className="flex flex-wrap gap-1">
-                              {u.unlockedTiers && u.unlockedTiers.length > 0 ? (
-                                u.unlockedTiers.map((t) => (
-                                  <span
-                                    key={t}
-                                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                      t === 'level3'
-                                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                        : t === 'level2'
-                                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                                        : t === 'synastry_addon'
-                                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                                        : 'bg-slate-800 text-slate-400'
-                                    }`}
-                                  >
-                                    {t === 'level3'
-                                      ? '高階終身 699'
-                                      : t === 'level2'
-                                      ? '初階解析 199'
-                                      : t === 'synastry_addon'
-                                      ? '合盤加購 399'
-                                      : '免費體驗'}
-                                  </span>
-                                ))
-                              ) : (
-                                <span className="text-slate-500 text-[10px]">免費體驗</span>
-                              )}
+                              {(() => {
+                                const tiers = (u as any).unlocked_tiers || u.unlockedTiers || [];
+                                const hasL3 = tiers.some((t: string) => ['level3', 'tier_699', '699'].includes(t));
+                                const hasL2 = tiers.some((t: string) => ['level2', 'tier_199', '199'].includes(t));
+                                const hasSyn = tiers.some((t: string) => ['synastry_addon', 'tier_399', '399'].includes(t));
+
+                                if (!hasL3 && !hasL2 && !hasSyn) {
+                                  return (
+                                    <span className="text-slate-500 text-[10px] px-1.5 py-0.5 bg-slate-900 rounded border border-slate-800">
+                                      免費體驗
+                                    </span>
+                                  );
+                                }
+
+                                return (
+                                  <>
+                                    {hasL2 && (
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                                        初階解析 199
+                                      </span>
+                                    )}
+                                    {hasSyn && (
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                        合盤加購 399
+                                      </span>
+                                    )}
+                                    {hasL3 && (
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                        高階終身 699
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </div>
                           </td>
                           <td className="py-3 px-4 text-slate-400 font-mono text-[11px]">
@@ -2920,220 +2929,22 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODAL 2: 編輯會員 Modal */}
-      {isEditUserModalOpen && editingUser && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Edit3 className="w-4 h-4 text-amber-400" />
-                  編輯會員資料
-                </h3>
-                <p className="text-xs text-slate-500 font-mono mt-0.5">
-                  帳號：{editingUser.email}
-                </p>
-              </div>
-              <button
-                onClick={() => setIsEditUserModalOpen(false)}
-                className="text-slate-500 hover:text-slate-300 text-lg leading-none"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEditUser} className="space-y-3.5">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">姓名</label>
-                <input
-                  type="text"
-                  required
-                  value={editUserData.name}
-                  onChange={(e) => setEditUserData({ ...editUserData, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">
-                  直接重設密碼 (若不修改請留空)
-                </label>
-                <div className="relative">
-                  <input
-                    type={showEditUserPassword ? 'text' : 'password'}
-                    value={editUserData.password}
-                    onChange={(e) => setEditUserData({ ...editUserData, password: e.target.value })}
-                    placeholder="留空表示保持原密碼不變"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400 pr-9"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowEditUserPassword(!showEditUserPassword)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                  >
-                    {showEditUserPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">身分角色</label>
-                  <select
-                    value={editUserData.role}
-                    onChange={(e: any) => setEditUserData({ ...editUserData, role: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400"
-                  >
-                    <option value="user">一般會員 (User)</option>
-                    <option value="admin">系統管理員 (Admin)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">帳號狀態</label>
-                  <select
-                    value={editUserData.status}
-                    onChange={(e: any) => setEditUserData({ ...editUserData, status: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400"
-                  >
-                    <option value="active">正常運作</option>
-                    <option value="suspended">停權凍結</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* 企業機構與統一編號 */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">企業機構</label>
-                  <input
-                    type="text"
-                    value={editUserData.company}
-                    onChange={(e) => setEditUserData({ ...editUserData, company: e.target.value })}
-                    placeholder="例如：中央研究院"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">統一編號</label>
-                  <input
-                    type="text"
-                    value={editUserData.taxId}
-                    onChange={(e) => setEditUserData({ ...editUserData, taxId: e.target.value })}
-                    placeholder="例如：03811209"
-                    maxLength={8}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
-                  />
-                </div>
-              </div>
-
-              {/* 行業分類與聯絡電話 */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">行業分類</label>
-                  <select
-                    value={editUserData.industry}
-                    onChange={(e) => setEditUserData({ ...editUserData, industry: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400"
-                  >
-                    <option value="學校或研究單位">學校或研究單位</option>
-                    <option value="製造業">製造業</option>
-                    <option value="批發與零售業">批發與零售業</option>
-                    <option value="資訊與通訊科技業">資訊與通訊科技業</option>
-                    <option value="金融與保險業">金融與保險業</option>
-                    <option value="專業、科學與技術服務業">專業、科學與技術服務業</option>
-                    <option value="醫療保健與社會工作服務業">醫療保健與社會工作服務業</option>
-                    <option value="藝術、娛樂與休閒服務業">藝術、娛樂與休閒服務業</option>
-                    <option value="其他">其他</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">聯絡電話</label>
-                  <input
-                    type="tel"
-                    value={editUserData.phone}
-                    onChange={(e) => setEditUserData({ ...editUserData, phone: e.target.value })}
-                    placeholder="例如：0932122156"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
-                  />
-                </div>
-              </div>
-
-              {/* 通訊地址 */}
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">通訊地址</label>
-                <input
-                  type="text"
-                  value={editUserData.address}
-                  onChange={(e) => setEditUserData({ ...editUserData, address: e.target.value })}
-                  placeholder="例如：台北市南港區研究院路二段128號"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-400 mb-1.5">解鎖權限等級調整</label>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {[
-                    { id: 'level2', label: '初階解析 (199)' },
-                    { id: 'level3', label: '高階終身 (699)' },
-                    { id: 'synastry_addon', label: '雙人合盤 (399)' },
-                  ].map((tier) => (
-                    <label
-                      key={tier.id}
-                      className="flex items-center gap-2 p-2 bg-slate-950 border border-slate-800 rounded-lg cursor-pointer hover:border-slate-700"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={editUserData.unlockedTiers.includes(tier.id as any)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setEditUserData({
-                              ...editUserData,
-                              unlockedTiers: [...editUserData.unlockedTiers, tier.id as any],
-                            });
-                          } else {
-                            setEditUserData({
-                              ...editUserData,
-                              unlockedTiers: editUserData.unlockedTiers.filter((t) => t !== tier.id),
-                            });
-                          }
-                        }}
-                        className="rounded border-slate-700 text-amber-500 focus:ring-0"
-                      />
-                      <span className="text-slate-300">{tier.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  disabled={isSavingUser}
-                  onClick={() => setIsEditUserModalOpen(false)}
-                  className="px-3.5 py-1.5 rounded-xl border border-slate-700 text-slate-400 hover:text-white text-xs disabled:opacity-50"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingUser}
-                  className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  {isSavingUser ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>儲存中...</span>
-                    </>
-                  ) : (
-                    <span>儲存變更</span>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* MODAL 2: 獨立編修會員資料與企業資訊 Modal */}
+      <UserEditModal
+        isOpen={isEditUserModalOpen}
+        user={editingUser}
+        token={token}
+        onClose={() => {
+          setIsEditUserModalOpen(false);
+          setEditingUser(null);
+        }}
+        onSaved={() => {
+          fetchUsers();
+          fetchStats();
+          fetchAuditLogs();
+        }}
+        showFeedback={showFeedback}
+      />
 
       {/* MODAL 3: 新增離線補單 Modal */}
       {isCreateOrderModalOpen && (

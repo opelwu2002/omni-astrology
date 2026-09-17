@@ -59,9 +59,15 @@ let isInitialized = false;
 /**
  * 安全轉換為去密碼的安全會員物件
  */
-export function toSafeUser(user: StorageUser): UserSafe {
+export function toSafeUser(user: StorageUser): UserSafe & { unlocked_tiers: string[]; tax_id?: string } {
   const { passwordHash: _, ...safe } = user;
-  return safe;
+  const tiers = Array.isArray(safe.unlockedTiers) ? safe.unlockedTiers : ['free'];
+  return {
+    ...safe,
+    unlockedTiers: tiers,
+    unlocked_tiers: tiers,
+    tax_id: safe.taxId,
+  };
 }
 
 /**
@@ -404,17 +410,23 @@ export async function updateUser(
   if (updateData.industry !== undefined) targetUser.industry = cleanStr(updateData.industry);
   if (updateData.address !== undefined) targetUser.address = cleanStr(updateData.address);
 
-  // 更新解鎖權限等級 (支援 unlockedTiers 與 unlocked_tiers 雙命名)
+  // 更新解鎖權限等級 (支援 unlockedTiers 與 unlocked_tiers 雙命名及別名家族規範化)
   const rawTiers = updateData.unlockedTiers ?? updateData.unlocked_tiers;
   if (rawTiers !== undefined) {
     const list = Array.isArray(rawTiers) ? [...rawTiers] : [String(rawTiers)];
-    if (!list.includes('free')) {
-      list.unshift('free');
-    }
+    const has199 = list.some((t) => ['199', 'tier_199', 'level2'].includes(t));
+    const has399 = list.some((t) => ['399', 'tier_399', 'synastry_addon'].includes(t));
+    const has699 = list.some((t) => ['699', 'tier_699', 'level3'].includes(t));
+
+    const finalList: string[] = ['free'];
+    if (has199) finalList.push('level2', 'tier_199', '199');
+    if (has399) finalList.push('synastry_addon', 'tier_399', '399');
+    if (has699) finalList.push('level3', 'tier_699', '699');
+
     const isMaster = targetUser.email === 'opelwu2002@gmail.com';
     targetUser.unlockedTiers = isMaster
-      ? ['free', 'level2', 'level3', 'synastry_addon']
-      : Array.from(new Set(list));
+      ? ['free', 'level2', 'level3', 'synastry_addon', 'tier_199', 'tier_399', 'tier_699', '199', '399', '699']
+      : Array.from(new Set(finalList));
   }
 
   if (updateData.password && updateData.password.trim().length >= 6) {

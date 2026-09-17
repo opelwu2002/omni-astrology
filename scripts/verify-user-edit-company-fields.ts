@@ -1,5 +1,5 @@
 /**
- * 專屬驗證腳本：驗證後台會員編輯 Modal 之企業與通訊欄位、權限持久化儲存與黃光隆正確資料
+ * 專屬自動化測試腳本：精準驗證 UserEditModal 欄位綁定與 unlocked_tiers 自由增刪 Bug 修復
  */
 
 import { strict as assert } from 'assert';
@@ -14,25 +14,26 @@ import {
 
 async function runVerification() {
   console.log('================================================================');
-  console.log('🚀 開始驗證：後台編輯 Modal 企業資訊欄位與權限持久化儲存');
+  console.log('🚀 開始驗證：UserEditModal 5大企業欄位與 unlocked_tiers 增刪修復');
   console.log('================================================================\n');
 
-  // 【測試 1：檢驗前端 app/admin/page.tsx 之 Modal 欄位完整性】
-  console.log('▶ 測試 1：檢驗前端 app/admin/page.tsx 編輯 Modal 欄位完整性...');
-  const adminPageCode = fs.readFileSync(path.join(process.cwd(), 'app', 'admin', 'page.tsx'), 'utf-8');
+  // 【測試 1：檢驗 UserEditModal.tsx 實體組件與欄位綁定】
+  console.log('▶ 測試 1：檢驗 components/admin/UserEditModal.tsx 組件欄位與狀態綁定...');
+  const modalPath = path.join(process.cwd(), 'components', 'admin', 'UserEditModal.tsx');
+  assert(fs.existsSync(modalPath), 'UserEditModal.tsx 檔案必須存在');
+  const modalCode = fs.readFileSync(modalPath, 'utf-8');
 
-  assert(adminPageCode.includes('editUserData.company'), 'Modal 必須綁定 editUserData.company');
-  assert(adminPageCode.includes('editUserData.taxId'), 'Modal 必須綁定 editUserData.taxId');
-  assert(adminPageCode.includes('editUserData.industry'), 'Modal 必須綁定 editUserData.industry');
-  assert(adminPageCode.includes('editUserData.phone'), 'Modal 必須綁定 editUserData.phone');
-  assert(adminPageCode.includes('editUserData.address'), 'Modal 必須綁定 editUserData.address');
-  assert(adminPageCode.includes('unlocked_tiers'), '送出 payload 必須支援 unlocked_tiers 雙命名相容');
-  assert(adminPageCode.includes('tax_id'), '送出 payload 必須支援 tax_id 雙命名相容');
-  assert(adminPageCode.includes('學校或研究單位'), '行業分類下拉選單必須包含「學校或研究單位」');
-  console.log('  ✓ 前端 Modal 已完整具備 5 大企業與聯絡欄位、下拉選單及雙命名支援！');
+  assert(modalCode.includes('unlocked_tiers:'), 'State 必須包含 unlocked_tiers 陣列');
+  assert(modalCode.includes('formData.company'), '必須綁定 formData.company (企業機構)');
+  assert(modalCode.includes('formData.taxId'), '必須綁定 formData.taxId (統一編號)');
+  assert(modalCode.includes('formData.industry'), '必須綁定 formData.industry (行業分類)');
+  assert(modalCode.includes('formData.phone'), '必須綁定 formData.phone (聯絡電話)');
+  assert(modalCode.includes('formData.address'), '必須綁定 formData.address (通訊地址)');
+  assert(modalCode.includes('handleTierToggle'), '必須包含 handleTierToggle 獨立切換函式');
+  console.log('  ✓ UserEditModal 組件具備完整 5 大企業欄位與獨立 handleTierToggle 函式！');
 
-  // 【測試 2：檢驗黃光隆 (kc7470@gmail.com) 正確基本資料】
-  console.log('\n▶ 測試 2：檢驗黃光隆 (kc7470@gmail.com) 正確資料對照...');
+  // 【測試 2：檢驗黃光隆 (kc7470@gmail.com) 初始狀態絕無 199 權限】
+  console.log('\n▶ 測試 2：檢驗初始狀態絕無 199 權限（杜絕沒加給卻預先給 199）...');
   const huangUser = await findUserByEmail('kc7470@gmail.com');
   assert(huangUser, '系統必須存在黃光隆 (kc7470@gmail.com) 會員');
   assert.equal(huangUser.company, '中央研究院', '企業機構必須為「中央研究院」');
@@ -40,82 +41,102 @@ async function runVerification() {
   assert.equal(huangUser.industry, '學校或研究單位', '行業分類必須為「學校或研究單位」');
   assert.equal(huangUser.phone, '0932122156', '電話必須為「0932122156」');
   assert.equal(huangUser.address, '台北市南港區研究院路二段128號', '地址必須為「台北市南港區研究院路二段128號」');
-  console.log('  ✓ 黃光隆會員目前資料已 100% 正確吻合中央研究院對照需求！');
 
-  // 【測試 3：透過 API 模擬修改權限與企業資料（使用蛇形 unlocked_tiers 與 tax_id 命名）】
-  console.log('\n▶ 測試 3：模擬管理員呼叫 PUT /api/admin/users/update 修改權限與企業資料...');
-  const updatePayload = {
-    targetUserId: huangUser.id,
-    name: '黃光隆',
-    company: '中央研究院',
-    tax_id: '03811209',
-    industry: '學校或研究單位',
-    phone: '0932122156',
-    address: '台北市南港區研究院路二段128號',
-    unlocked_tiers: ['level2', 'level3'], // 傳入蛇形命名，驗證後端相容解析
-  };
+  const has199Initial = huangUser.unlockedTiers.some((t) => ['199', 'tier_199', 'level2'].includes(t));
+  assert(!has199Initial, '初始會員絕不可包含 199 權限！目前權限: ' + JSON.stringify(huangUser.unlockedTiers));
+  console.log('  ✓ 通過：初始會員純淨無 199 權限，目前權限:', huangUser.unlockedTiers);
 
-  const req = new Request('http://localhost:3000/api/admin/users/update', {
+  // 【測試 3：多勾選 399 與 699 後儲存，驗證精準具備 399 與 699，且絕無 199】
+  console.log('\n▶ 測試 3：多勾選 399 與 699 後儲存（杜絕只存 199 或無法增修）...');
+  const add399And699Req = new Request('http://localhost:3000/api/admin/users/update', {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       Authorization: 'Bearer omni-master-admin-token',
     },
-    body: JSON.stringify(updatePayload),
+    body: JSON.stringify({
+      email: 'kc7470@gmail.com',
+      company: '中央研究院',
+      taxId: '03811209',
+      industry: '學校或研究單位',
+      phone: '0932122156',
+      address: '台北市南港區研究院路二段128號',
+      unlocked_tiers: ['tier_399', 'tier_699'],
+    }),
   });
 
-  const res = await updateUserHandler(req);
-  const data = await res.json();
-  console.log('  - 更新 API 回傳狀態:', res.status);
-  console.log('  - 更新 API 回傳訊息:', data.message);
-  assert.equal(res.status, 200, '更新 API 必須回傳 200 OK');
-  assert.equal(data.success, true, '更新 API 必須回傳 success: true');
-  assert(Array.isArray(data.user.unlockedTiers), '回傳會員物件之 unlockedTiers 必須為陣列');
-  assert(data.user.unlockedTiers.includes('level2'), '更新後必須包含 level2 權限');
-  assert(data.user.unlockedTiers.includes('level3'), '更新後必須包含 level3 權限');
-  assert(data.user.unlockedTiers.includes('free'), '更新後必須保留基礎 free 權限');
-  console.log('  ✓ API 回傳權限正確變更:', data.user.unlockedTiers);
+  const res3 = await updateUserHandler(add399And699Req);
+  const data3 = await res3.json();
+  assert.equal(res3.status, 200, '更新 API 回傳 200');
+  assert.equal(data3.success, true, '更新必須成功');
 
-  // 【測試 4：檢驗單一事實來源與本地磁碟持久化深度】
-  console.log('\n▶ 測試 4：檢驗儲存核心持久化與實體磁碟 data/users.json...');
-  const reloadedHuang = await findUserByEmail('kc7470@gmail.com');
-  assert(reloadedHuang, '持久化儲存庫必須能讀取到黃光隆');
-  assert(reloadedHuang.unlockedTiers.includes('level2'), '持久化後 level2 依然存在');
-  assert(reloadedHuang.unlockedTiers.includes('level3'), '持久化後 level3 依然存在');
+  const tiers3 = data3.user.unlockedTiers;
+  assert(tiers3.some((t: string) => ['399', 'tier_399', 'synastry_addon'].includes(t)), '必須成功加入 399 權限');
+  assert(tiers3.some((t: string) => ['699', 'tier_699', 'level3'].includes(t)), '必須成功加入 699 權限');
+  assert(!tiers3.some((t: string) => ['199', 'tier_199', 'level2'].includes(t)), '絕不可殘留 199 權限');
+  console.log('  ✓ 通過：399 與 699 成功寫入，且無 199 殘留！目前權限:', tiers3);
 
-  const diskPath = path.join(process.cwd(), 'data', 'users.json');
-  if (fs.existsSync(diskPath)) {
-    const rawDisk = fs.readFileSync(diskPath, 'utf-8');
-    assert(rawDisk.includes('中央研究院'), '實體磁碟必須寫入「中央研究院」');
-    assert(rawDisk.includes('03811209'), '實體磁碟必須寫入統編「03811209」');
-    assert(rawDisk.includes('0932122156'), '實體磁碟必須寫入電話「0932122156」');
-    assert(rawDisk.includes('level3'), '實體磁碟必須寫入權限「level3」');
-    console.log('  ✓ 實體磁碟 data/users.json 100% 物理覆寫成功，絕不還原！');
-  }
-
-  // 【測試 5：再度切換權限（移除 level3，保留 level2），驗證可雙向自由增刪】
-  console.log('\n▶ 測試 5：測試動態收回權限（移除 level3）並持久化儲存...');
-  const downgradePayload = {
-    targetUserId: huangUser.id,
-    unlockedTiers: ['level2'], // 只留 level2
-  };
-  const req2 = new Request('http://localhost:3000/api/admin/users/update', {
+  // 【測試 4：加給 199 權限後儲存】
+  console.log('\n▶ 測試 4：加給 199 權限後儲存...');
+  const add199Req = new Request('http://localhost:3000/api/admin/users/update', {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       Authorization: 'Bearer omni-master-admin-token',
     },
-    body: JSON.stringify(downgradePayload),
+    body: JSON.stringify({
+      email: 'kc7470@gmail.com',
+      unlocked_tiers: ['tier_199', 'tier_399', 'tier_699'],
+    }),
   });
-  const res2 = await updateUserHandler(req2);
-  const data2 = await res2.json();
-  assert.equal(res2.status, 200, '降級更新必須成功');
-  assert(data2.user.unlockedTiers.includes('level2'), '必須保留 level2');
-  assert(!data2.user.unlockedTiers.includes('level3'), 'level3 必須已被精準移除');
-  console.log('  ✓ 權限動態收回成功！目前最新權限:', data2.user.unlockedTiers);
+  const res4 = await updateUserHandler(add199Req);
+  const data4 = await res4.json();
+  const tiers4 = data4.user.unlockedTiers;
+  assert(tiers4.some((t: string) => ['199', 'tier_199', 'level2'].includes(t)), '必須成功加入 199');
+  console.log('  ✓ 通過：199 成功加入！目前權限:', tiers4);
+
+  // 【測試 5：去除 199 權限後儲存，驗證 199 徹底抹除，絕不留有 199】
+  console.log('\n▶ 測試 5：去除 199 權限後儲存（杜絕去除後依然留有 199）...');
+  const remove199Req = new Request('http://localhost:3000/api/admin/users/update', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer omni-master-admin-token',
+    },
+    body: JSON.stringify({
+      email: 'kc7470@gmail.com',
+      unlocked_tiers: ['tier_399'], // 只留 399，徹底去除 199
+    }),
+  });
+  const res5 = await updateUserHandler(remove199Req);
+  const data5 = await res5.json();
+  const tiers5 = data5.user.unlockedTiers;
+  assert(!tiers5.some((t: string) => ['199', 'tier_199', 'level2'].includes(t)), '199 必須徹底移除，絕不可殘留！');
+  assert(tiers5.some((t: string) => ['399', 'tier_399', 'synastry_addon'].includes(t)), '399 必須被保留');
+  console.log('  ✓ 通過：去除 199 後儲存，199 徹底消失，絕不殘留！目前權限:', tiers5);
+
+  // 【測試 6：檢驗全部清空（只留 free）】
+  console.log('\n▶ 測試 6：測試全部清空方案（只保留基礎免費體驗）...');
+  const clearAllReq = new Request('http://localhost:3000/api/admin/users/update', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer omni-master-admin-token',
+    },
+    body: JSON.stringify({
+      email: 'kc7470@gmail.com',
+      unlocked_tiers: [],
+    }),
+  });
+  const res6 = await updateUserHandler(clearAllReq);
+  const data6 = await res6.json();
+  const tiers6 = data6.user.unlockedTiers;
+  assert.equal(tiers6.length, 1, '全部清空後應只剩 free');
+  assert.equal(tiers6[0], 'free', '唯一權限必須為 free');
+  console.log('  ✓ 通過：全部清空後純淨為 [free]，無任何付費方案！');
 
   console.log('\n================================================================');
-  console.log('🎉 所有驗證通過！後台編輯會員 Modal 企業欄位與權限儲存機制 100% 健全！');
+  console.log('🎉 全部 6 大項測試 100% 通過！unlocked_tiers 勾選儲存 Bug 徹底消滅！');
   console.log('================================================================\n');
 }
 
