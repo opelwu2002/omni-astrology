@@ -424,7 +424,10 @@ export async function createAuthUser(params: {
       last_login_at: newUser.lastLoginAt,
     };
 
-    const { error: insertError } = await supabase.from('users').insert(insertPayload);
+    const { data: insertedRows, error: insertError } = await supabase
+      .from('users')
+      .insert(insertPayload)
+      .select('id');
 
     if (insertError) {
       console.error('[auth-users] Supabase 新增會員失敗:', insertError);
@@ -446,6 +449,13 @@ export async function createAuthUser(params: {
 
       throw new Error(`雲端資料庫會員寫入失敗：${insertError.message || '連線逾時或權限不足'}`);
     }
+
+    if (!insertedRows || insertedRows.length === 0 || !insertedRows[0]?.id) {
+      throw new Error('雲端資料庫寫入失敗：未能確認寫入且未取得新記錄 ID');
+    }
+
+    // 確保使用雲端資料庫確認之 ID
+    newUser.id = insertedRows[0].id;
   }
 
   // 2. 雲端資料庫成功寫入後（或未配置雲端時），同步寫入本機記憶體與 users.json

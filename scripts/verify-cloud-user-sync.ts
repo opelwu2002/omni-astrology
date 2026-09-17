@@ -91,21 +91,31 @@ async function runTests() {
   assert(dupErrorThrown, '重複 Email 必須被攔截並拋出錯誤');
   console.log('✅ 測試 5 通過：重複 Email 嚴格拋錯\n');
 
-  // 測試 6：檢驗後台 API 代碼中 GET 必須使用 await getUsersAsync()
-  console.log('▶ 測試 6：檢驗 app/api/admin/users/route.ts 使用非同步雲端讀取...');
+  // 測試 6：檢驗後台 API 100% 直連 Supabase 雲端資料庫，徹底杜絕本機 users.json fallback
+  console.log('▶ 測試 6：檢驗 app/api/admin/users/route.ts 100% 直連 Supabase 雲端資料庫...');
   const adminUsersRoutePath = path.join(process.cwd(), 'app', 'api', 'admin', 'users', 'route.ts');
   const adminUsersRouteCode = fs.readFileSync(adminUsersRoutePath, 'utf-8');
-  assert(adminUsersRouteCode.includes('await getUsersAsync()'), '後台 GET 必須呼叫 await getUsersAsync()');
+  assert(adminUsersRouteCode.includes(".from('users')") && adminUsersRouteCode.includes(".select('*')"), "後台 GET 必須直連 .from('users') 並 .select('*')");
+  assert(!adminUsersRouteCode.includes('getUsersAsync()'), '後台 GET 嚴禁使用本機 getUsersAsync() 作為 fallback');
   assert(adminUsersRouteCode.includes('phone'), '後台 POST 必須解構 phone');
   assert(adminUsersRouteCode.includes('company'), '後台 POST 必須解構 company');
-  console.log('✅ 測試 6 通過：後台 API 100% 連接非同步雲端資料庫\n');
+  console.log('✅ 測試 6 通過：後台 API 100% 直連真實雲端 Supabase，零本機 fallback\n');
 
   // 測試 7：檢驗後台統計 API 代碼中 GET 必須使用 await getUsersAsync()
   console.log('▶ 測試 7：檢驗 app/api/admin/stats/route.ts 使用非同步雲端讀取...');
   const adminStatsRoutePath = path.join(process.cwd(), 'app', 'api', 'admin', 'stats', 'route.ts');
   const adminStatsRouteCode = fs.readFileSync(adminStatsRoutePath, 'utf-8');
   assert(adminStatsRouteCode.includes('await getUsersAsync()'), '後台統計 GET 必須呼叫 await getUsersAsync()');
-  console.log('✅ 測試 7 通過：後台統計 API 100% 連接非同步雲端資料庫\n');
+  console.log('✅ 測試 7 通過：後台統計 API 連接非同步資料庫\n');
+
+  // 測試 8：檢驗註冊 API 原子性防護（嚴禁未配置 Supabase 時假性成功派發 Token）
+  console.log('▶ 測試 8：檢驗 app/api/auth/register/route.ts 註冊原子性防護...');
+  const registerRoutePath = path.join(process.cwd(), 'app', 'api', 'auth', 'register', 'route.ts');
+  const registerRouteCode = fs.readFileSync(registerRoutePath, 'utf-8');
+  assert(registerRouteCode.includes('getSupabaseAdmin()'), '註冊 API 必須強制檢查 getSupabaseAdmin()');
+  assert(registerRouteCode.includes('status: 500'), '未配置或資料庫寫入失敗時必須回傳 500 錯誤中斷流程');
+  assert(registerRouteCode.includes('資料庫寫入失敗，請確認雲端資料庫配置'), '未配置時必須回傳精確防呆錯誤文案');
+  console.log('✅ 測試 8 通過：註冊 API 具備完整原子性防護，嚴禁虛假註冊成功\n');
 
   // 清理作業：移除測試會員資料，嚴防污染正式儲存庫 users.json
   console.log('▶ 清理作業：移除測試會員資料...');

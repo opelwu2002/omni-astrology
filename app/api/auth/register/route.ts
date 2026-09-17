@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createAuthUser } from '@/lib/auth-users';
-import { signToken } from '@/lib/auth';
+import { signToken, createPrivateJsonResponse } from '@/lib/auth';
 import { isValidTaiwanTaxId, isValidTaiwanPhone, CLIMATE_CHANGE_INDUSTRIES } from '@/lib/validators';
+import { getSupabaseAdmin } from '@/lib/db/supabase';
 
 export async function POST(request: Request) {
   try {
@@ -75,7 +76,17 @@ export async function POST(request: Request) {
       }
     }
 
-    // 6. 建立新會員（記憶體、檔案 data/users.json 與雲端多向同步，保證後台名單不脫鉤）
+    // 6. 強制驗證 Supabase 雲端資料庫配置（若未配置嚴禁假性註冊，直接中止回傳 500）
+    const supabase = getSupabaseAdmin();
+    if (!supabase) {
+      console.error('[CRITICAL] 註冊中斷：雲端資料庫 Supabase 未配置，嚴禁前端虛假註冊成功！');
+      return NextResponse.json(
+        { success: false, error: '資料庫寫入失敗，請確認雲端資料庫配置' },
+        { status: 500 }
+      );
+    }
+
+    // 7. 建立新會員（原子性寫入 Supabase users 表，必須確認 INSERT 成功且取回新產生之 user.id）
     const user = await createAuthUser({
       email: email.trim().toLowerCase(),
       password,
@@ -87,22 +98,53 @@ export async function POST(request: Request) {
       address: address.trim(),
     });
 
+    if (!user || !user.id) {
+      return NextResponse.json(
+        { success: false, error: '資料庫寫入失敗，請確認雲端資料庫配置' },
+        { status: 500 }
+      );
+    }
+
+    // 8. 真正寫入資料庫成功後，才簽發 JWT Token 與 Cookie
     const token = signToken({
       userId: user.id,
       email: user.email,
       role: user.role,
     });
 
-    return NextResponse.json({
+    const res = createPrivateJsonResponse({
       success: true,
       user,
       token,
       message: '會員註冊成功並已安全登入！',
     });
+
+    res.cookies.set('token', token, {
+      path: '/',
+      httpOnly: false,
+      sameSite: 'lax',
+      maxAge: 86400 * 7,
+    });
+    res.cookies.set('auth_token', token, {
+      path: '/',
+      httpOnly: false,
+      sameSite: 'lax',
+      maxAge: 86400 * 7,
+    });
+
+    return res;
   } catch (error: any) {
+    console.error('[register] 註冊處理異常:', error);
+    const errorMsg = error?.message || '註冊失敗';
+    const isDbError =
+      errorMsg.includes('資料庫') ||
+      errorMsg.includes('Supabase') ||
+      errorMsg.includes('連線') ||
+      errorMsg.includes('逾時');
+
     return NextResponse.json(
-      { success: false, error: error?.message || '註冊失敗' },
-      { status: 400 }
+      { success: false, error: errorMsg },
+      { status: isDbError ? 500 : 400 }
     );
   }
 }

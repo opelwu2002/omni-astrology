@@ -13,22 +13,30 @@ const supabaseKey =
   '';
 
 let cachedClient: SupabaseClient | null = null;
+let hasLoggedCriticalMissing = false;
 
 /**
  * 檢查目前是否有配置 Supabase 雲端環境變數
  */
 export function isSupabaseConfigured(): boolean {
-  return Boolean(
+  const configured = Boolean(
     supabaseUrl &&
       supabaseKey &&
       supabaseUrl.startsWith('http') &&
       !supabaseUrl.includes('your-supabase')
   );
+
+  if (!configured && !hasLoggedCriticalMissing) {
+    console.error('[CRITICAL] Supabase 環境變數未配置，資料將無法持久化！');
+    hasLoggedCriticalMissing = true;
+  }
+
+  return configured;
 }
 
 /**
  * 取得後端特權 Supabase 用戶端 (Service Role / Admin)
- * 若未配置則回傳 null
+ * 若未配置則回傳 null，並於控制台輸出報警
  */
 export function getSupabaseAdmin(): SupabaseClient | null {
   if (!isSupabaseConfigured()) {
@@ -46,3 +54,4 @@ export function getSupabaseAdmin(): SupabaseClient | null {
 
   return cachedClient;
 }
+
