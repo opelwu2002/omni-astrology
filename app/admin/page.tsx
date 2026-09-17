@@ -170,6 +170,11 @@ export default function AdminPage() {
     status: 'active' as 'active' | 'suspended',
     password: '',
     unlockedTiers: ['free'] as UnlockTier[],
+    company: '',
+    taxId: '',
+    industry: '',
+    phone: '',
+    address: '',
   });
 
   // 新增人工訂單表單
@@ -568,11 +573,16 @@ export default function AdminPage() {
   const openEditUserModal = (targetUser: UserSafe) => {
     setEditingUser(targetUser);
     setEditUserData({
-      name: targetUser.name,
+      name: targetUser.name || '',
       role: targetUser.role,
       status: targetUser.status,
       password: '',
       unlockedTiers: targetUser.unlockedTiers || ['free'],
+      company: targetUser.company || '',
+      taxId: targetUser.taxId || '',
+      industry: targetUser.industry || '學校或研究單位',
+      phone: targetUser.phone || '',
+      address: targetUser.address || '',
     });
     setIsEditUserModalOpen(true);
   };
@@ -599,10 +609,17 @@ export default function AdminPage() {
       const payload: any = {
         targetUserId: editingUser.id,
         id: editingUser.id,
-        name: editUserData.name,
+        name: editUserData.name.trim(),
         role: editUserData.role,
         status: editUserData.status,
         unlockedTiers: editUserData.unlockedTiers,
+        unlocked_tiers: editUserData.unlockedTiers,
+        company: editUserData.company.trim(),
+        taxId: editUserData.taxId.trim(),
+        tax_id: editUserData.taxId.trim(),
+        industry: editUserData.industry.trim(),
+        phone: editUserData.phone.trim(),
+        address: editUserData.address.trim(),
       };
       if (editUserData.password.trim().length >= 6) {
         payload.password = editUserData.password.trim();
@@ -2906,7 +2923,7 @@ export default function AdminPage() {
       {/* MODAL 2: 編輯會員 Modal */}
       {isEditUserModalOpen && editingUser && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -2982,6 +2999,75 @@ export default function AdminPage() {
                     <option value="suspended">停權凍結</option>
                   </select>
                 </div>
+              </div>
+
+              {/* 企業機構與統一編號 */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">企業機構</label>
+                  <input
+                    type="text"
+                    value={editUserData.company}
+                    onChange={(e) => setEditUserData({ ...editUserData, company: e.target.value })}
+                    placeholder="例如：中央研究院"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">統一編號</label>
+                  <input
+                    type="text"
+                    value={editUserData.taxId}
+                    onChange={(e) => setEditUserData({ ...editUserData, taxId: e.target.value })}
+                    placeholder="例如：03811209"
+                    maxLength={8}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* 行業分類與聯絡電話 */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">行業分類</label>
+                  <select
+                    value={editUserData.industry}
+                    onChange={(e) => setEditUserData({ ...editUserData, industry: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400"
+                  >
+                    <option value="學校或研究單位">學校或研究單位</option>
+                    <option value="製造業">製造業</option>
+                    <option value="批發與零售業">批發與零售業</option>
+                    <option value="資訊與通訊科技業">資訊與通訊科技業</option>
+                    <option value="金融與保險業">金融與保險業</option>
+                    <option value="專業、科學與技術服務業">專業、科學與技術服務業</option>
+                    <option value="醫療保健與社會工作服務業">醫療保健與社會工作服務業</option>
+                    <option value="藝術、娛樂與休閒服務業">藝術、娛樂與休閒服務業</option>
+                    <option value="其他">其他</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">聯絡電話</label>
+                  <input
+                    type="tel"
+                    value={editUserData.phone}
+                    onChange={(e) => setEditUserData({ ...editUserData, phone: e.target.value })}
+                    placeholder="例如：0932122156"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* 通訊地址 */}
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">通訊地址</label>
+                <input
+                  type="text"
+                  value={editUserData.address}
+                  onChange={(e) => setEditUserData({ ...editUserData, address: e.target.value })}
+                  placeholder="例如：台北市南港區研究院路二段128號"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400"
+                />
               </div>
 
               <div>

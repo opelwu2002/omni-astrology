@@ -42,16 +42,16 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
+    const rawUnlockedTiers = body.unlockedTiers ?? body.unlocked_tiers;
+    const rawTaxId = body.taxId ?? body.tax_id;
     const {
       email,
       password,
       name,
       role,
       status,
-      unlockedTiers,
       phone,
       company,
-      taxId,
       industry,
       address,
     } = body;
@@ -78,10 +78,10 @@ export async function POST(request: Request) {
       name: name?.trim() || cleanEmail.split('@')[0],
       role: role || 'user',
       status: status || 'active',
-      unlockedTiers: unlockedTiers || ['free'],
+      unlockedTiers: Array.isArray(rawUnlockedTiers) ? rawUnlockedTiers : ['free'],
       phone: phone?.trim() || undefined,
       company: company?.trim() || undefined,
-      taxId: taxId?.trim() || undefined,
+      taxId: rawTaxId ? String(rawTaxId).trim() : undefined,
       industry: industry?.trim() || undefined,
       address: address?.trim() || undefined,
     });
@@ -121,23 +121,23 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const targetUserId = body.targetUserId || body.id;
+    const targetUserId = body.targetUserId || body.id || body.userId || body.email;
+    const rawUnlockedTiers = body.unlockedTiers ?? body.unlocked_tiers;
+    const rawTaxId = body.taxId ?? body.tax_id;
     const {
       name,
       role,
       status,
       password,
-      unlockedTiers,
       phone,
       company,
-      taxId,
       industry,
       address,
     } = body;
 
     if (!targetUserId) {
       return NextResponse.json(
-        { success: false, error: '缺少目標會員 ID' },
+        { success: false, error: '缺少目標會員 ID 或電子郵件' },
         { status: 400 }
       );
     }
@@ -147,10 +147,12 @@ export async function PATCH(request: Request) {
       role,
       status,
       password,
-      unlockedTiers,
+      unlockedTiers: rawUnlockedTiers,
+      unlocked_tiers: rawUnlockedTiers,
       phone,
       company,
-      taxId,
+      taxId: rawTaxId,
+      tax_id: rawTaxId,
       industry,
       address,
     });
@@ -161,7 +163,15 @@ export async function PATCH(request: Request) {
     if (role) detailParts.push(`角色變更為「${role}」`);
     if (status) detailParts.push(`狀態設為「${status}」`);
     if (password) detailParts.push('管理員直接重設登入密碼');
-    if (unlockedTiers) detailParts.push(`解鎖權限調整為 [${unlockedTiers.join(', ')}]`);
+    if (company) detailParts.push(`企業機構設為「${company}」`);
+    if (rawTaxId) detailParts.push(`統一編號設為「${rawTaxId}」`);
+    if (industry) detailParts.push(`行業分類設為「${industry}」`);
+    if (phone) detailParts.push(`電話設為「${phone}」`);
+    if (address) detailParts.push(`地址設為「${address}」`);
+    if (rawUnlockedTiers) {
+      const tiersStr = Array.isArray(rawUnlockedTiers) ? rawUnlockedTiers.join(', ') : rawUnlockedTiers;
+      detailParts.push(`解鎖權限調整為 [${tiersStr}]`);
+    }
 
     addAuditLog({
       adminId: user.id,

@@ -49,10 +49,11 @@ async function runVerification() {
     email: 'kc7470@gmail.com',
     password: 'TestPassword123!',
     name: '黃光隆',
-    phone: '0988776655',
-    company: '大隆工業',
-    industry: '製造業',
-    address: '台中市西屯區工業區一路',
+    phone: '0932122156',
+    company: '中央研究院',
+    taxId: '03811209',
+    industry: '學校或研究單位',
+    address: '台北市南港區研究院路二段128號',
   };
 
   const fakeRegisterReq = new Request('http://localhost:3000/api/auth/register', {

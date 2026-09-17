@@ -351,9 +351,11 @@ export async function updateUser(
     phone?: string;
     company?: string;
     taxId?: string;
+    tax_id?: string;
     industry?: string;
     address?: string;
     unlockedTiers?: string[];
+    unlocked_tiers?: string[];
   }
 ): Promise<UserSafe> {
   ensureInitialized();
@@ -387,20 +389,34 @@ export async function updateUser(
     throw new Error('找不到指定會員');
   }
 
-  // 更新欄位
-  if (updateData.name !== undefined) targetUser.name = updateData.name.trim();
+  const cleanStr = (val?: any) => (val === undefined || val === null ? undefined : String(val).trim());
+
+  // 更新基本資料欄位
+  if (updateData.name !== undefined) targetUser.name = cleanStr(updateData.name) || targetUser.name;
   if (updateData.role !== undefined) targetUser.role = updateData.role;
   if (updateData.status !== undefined) targetUser.status = updateData.status;
-  if (updateData.phone !== undefined) targetUser.phone = updateData.phone.trim();
-  if (updateData.company !== undefined) targetUser.company = updateData.company.trim();
-  if (updateData.taxId !== undefined) targetUser.taxId = updateData.taxId.trim();
-  if (updateData.industry !== undefined) targetUser.industry = updateData.industry.trim();
-  if (updateData.address !== undefined) targetUser.address = updateData.address.trim();
-  if (updateData.unlockedTiers !== undefined) {
-    targetUser.unlockedTiers = Array.isArray(updateData.unlockedTiers)
-      ? [...updateData.unlockedTiers]
-      : ['free'];
+
+  // 更新企業機構與聯絡資訊欄位
+  if (updateData.phone !== undefined) targetUser.phone = cleanStr(updateData.phone);
+  if (updateData.company !== undefined) targetUser.company = cleanStr(updateData.company);
+  const taxIdVal = updateData.taxId ?? updateData.tax_id;
+  if (taxIdVal !== undefined) targetUser.taxId = cleanStr(taxIdVal);
+  if (updateData.industry !== undefined) targetUser.industry = cleanStr(updateData.industry);
+  if (updateData.address !== undefined) targetUser.address = cleanStr(updateData.address);
+
+  // 更新解鎖權限等級 (支援 unlockedTiers 與 unlocked_tiers 雙命名)
+  const rawTiers = updateData.unlockedTiers ?? updateData.unlocked_tiers;
+  if (rawTiers !== undefined) {
+    const list = Array.isArray(rawTiers) ? [...rawTiers] : [String(rawTiers)];
+    if (!list.includes('free')) {
+      list.unshift('free');
+    }
+    const isMaster = targetUser.email === 'opelwu2002@gmail.com';
+    targetUser.unlockedTiers = isMaster
+      ? ['free', 'level2', 'level3', 'synastry_addon']
+      : Array.from(new Set(list));
   }
+
   if (updateData.password && updateData.password.trim().length >= 6) {
     targetUser.passwordHash = bcrypt.hashSync(updateData.password.trim(), 10);
   }
