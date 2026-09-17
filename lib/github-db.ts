@@ -19,36 +19,92 @@ export interface GitHubDbConfig {
   filePath: string;
 }
 
+// 嚴格確保檔案路徑無開頭斜線（杜絕 //data/users.json 或 /data/users.json 導致 404）
+export const FILE_PATH = (process.env.GITHUB_USERS_PATH || 'data/users.json')
+  .trim()
+  .replace(/^\/+/, '');
+
+export const BRANCH = (process.env.GITHUB_BRANCH || 'main').trim();
+
+/**
+ * 取得並正規化 Repository 擁有者與倉庫名（高容錯解析，杜絕雙重 owner 與 404 錯誤）
+ */
+export function getRepoInfo(): { owner: string; repo: string } {
+  const rawRepo = (
+    process.env.GITHUB_REPO ||
+    process.env.GITHUB_REPOSITORY ||
+    ''
+  )
+    .trim()
+    .replace(/^https?:\/\/github\.com\//i, '')
+    .replace(/\.git$/i, '')
+    .replace(/\/+$/, '');
+
+  let owner = (process.env.GITHUB_OWNER || process.env.GITHUB_REPO_OWNER || '').trim();
+  let repo = rawRepo;
+
+  if (rawRepo.includes('/')) {
+    const parts = rawRepo.split('/').filter(Boolean);
+    owner = parts[0] || owner;
+    repo = parts[1] || repo;
+  }
+
+  // 預設容錯：若仍缺少，預設使用專案本身的擁有者與名稱
+  if (!owner) owner = 'opelwu2002';
+  if (!repo || repo === 'opelwu2002') repo = 'omni-astrology';
+
+  // 再次檢查防止 repo 仍包含多餘層級
+  if (repo.includes('/')) {
+    const parts = repo.split('/').filter(Boolean);
+    owner = parts[0] || owner;
+    repo = parts[1] || repo;
+  }
+
+  return { owner: owner.trim(), repo: repo.trim() };
+}
+
+/**
+ * 取得共用標頭 (包含 User-Agent 與 Authorization)
+ */
+export function getHeaders(): Record<string, string> {
+  const token = (
+    process.env.GITHUB_TOKEN ||
+    process.env.GITHUB_PAT ||
+    process.env.GH_TOKEN ||
+    ''
+  ).trim();
+
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'Omni-Astrology-App',
+    'Content-Type': 'application/json',
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  return headers;
+}
+
 /**
  * 取得 GitHub 資料庫設定
  */
 export function getGitHubDbConfig(): GitHubDbConfig {
-  const token =
+  const token = (
     process.env.GITHUB_TOKEN ||
     process.env.GITHUB_PAT ||
     process.env.GH_TOKEN ||
-    '';
-
-  // 自動解析 GITHUB_REPOSITORY (例如 'opelwu2002/omni-astrology')
-  let defaultOwner = 'opelwu2002';
-  let defaultRepo = 'omni-astrology';
-  if (process.env.GITHUB_REPOSITORY && process.env.GITHUB_REPOSITORY.includes('/')) {
-    const parts = process.env.GITHUB_REPOSITORY.split('/');
-    defaultOwner = parts[0];
-    defaultRepo = parts[1];
-  }
-
-  const owner = process.env.GITHUB_OWNER || process.env.GITHUB_REPO_OWNER || defaultOwner;
-  const repo = process.env.GITHUB_REPO || process.env.GITHUB_REPOSITORY_NAME || defaultRepo;
-  const branch = process.env.GITHUB_BRANCH || 'main';
-  const filePath = process.env.GITHUB_USERS_PATH || 'data/users.json';
+    ''
+  ).trim();
+  const { owner, repo } = getRepoInfo();
 
   return {
-    token: token.trim(),
-    owner: owner.trim(),
-    repo: repo.trim(),
-    branch: branch.trim(),
-    filePath: filePath.trim(),
+    token,
+    owner,
+    repo,
+    branch: BRANCH,
+    filePath: FILE_PATH,
   };
 }
 
@@ -172,23 +228,20 @@ export async function fetchUsersFromGithub(forceRefresh = false): Promise<{
     };
   }
 
-  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.filePath}?ref=${config.branch}`;
+  const cleanPath = (config.filePath || FILE_PATH).replace(/^\/+/, '');
+  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${cleanPath}?ref=${encodeURIComponent(config.branch)}`;
 
   try {
     const res = await fetch(url, {
       method: 'GET',
-      headers: {
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'Omni-Astrology-App',
-        Authorization: `Bearer ${config.token}`,
-      },
+      headers: getHeaders(),
       cache: 'no-store',
     });
 
     if (!res.ok) {
       // 若遠端檔案尚未建立 (404)，嘗試讀取本地檔案作為種子
       if (res.status === 404) {
-        console.warn('[github-db] 遠端 data/users.json 尚未存在，使用本機預設值');
+        console.warn(`[github-db] 遠端 ${cleanPath} 尚未存在 (404)，使用本機預設值`);
         const localUsers = readUsersFromLocalDisk();
         return { users: localUsers, sha: '', isRemote: false };
       }
@@ -228,6 +281,91 @@ export async function fetchUsersFromGithub(forceRefresh = false): Promise<{
 }
 
 /**
+ * 高容錯 GitHub API 寫入函式 (saveUsersToGitHub)
+ * 嚴格去除前導斜線、自動抓取現有 SHA、支援首次新建與更新
+ */
+export async function saveUsersToGitHub(users: any[]) {
+  const { owner, repo } = getRepoInfo();
+  const headers = getHeaders();
+  const token = (
+    process.env.GITHUB_TOKEN ||
+    process.env.GITHUB_PAT ||
+    process.env.GH_TOKEN ||
+    ''
+  ).trim();
+
+  const cleanUsers = filterOutGhostUsers(users);
+
+  // 若未配置 Token，在本地開發/降級環境寫入本機
+  if (!token) {
+    console.warn('[GitHub DB] 未設定 GITHUB_TOKEN，寫入本機磁碟備份');
+    writeUsersToLocalDisk(cleanUsers);
+    return { success: true, isLocalFallback: true };
+  }
+
+  const cleanPath = FILE_PATH.replace(/^\/+/, '');
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${cleanPath}`;
+
+  console.log(`[GitHub DB] 正在讀取目標檔案 SHA: ${apiUrl}?ref=${BRANCH}`);
+
+  // 1. 取得檔案現有 SHA
+  let currentSha: string | undefined;
+  const getRes = await fetch(`${apiUrl}?ref=${encodeURIComponent(BRANCH)}`, {
+    headers,
+    cache: 'no-store',
+  });
+
+  if (getRes.ok) {
+    const fileData = await getRes.json();
+    currentSha = fileData.sha;
+    console.log(`[GitHub DB] 目標檔案已存在，取得現有 SHA: ${currentSha}`);
+  } else if (getRes.status !== 404) {
+    const errorText = await getRes.text();
+    throw new Error(`無法讀取 GitHub 檔案 (${getRes.status}): ${errorText}`);
+  } else {
+    console.log(`[GitHub DB] 遠端檔案尚不存在 (404)，將執行首次新建 commit`);
+  }
+
+  // 2. 將資料編碼為 Base64 (支援 UTF-8 中文)
+  const jsonString = JSON.stringify(cleanUsers, null, 2);
+  const contentBase64 = Buffer.from(jsonString, 'utf-8').toString('base64');
+
+  // 3. 執行 Commit 更新檔案
+  console.log(`[GitHub DB] 正在寫入更新至 GitHub: ${apiUrl}`);
+  const payload: any = {
+    message: `chore: 後台更新會員資料與權限 (${cleanUsers.length} 位會員) [skip ci]`,
+    content: contentBase64,
+    branch: BRANCH,
+  };
+  if (currentSha) {
+    payload.sha = currentSha;
+  }
+
+  const putRes = await fetch(apiUrl, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  if (!putRes.ok) {
+    const errJson = await putRes.json().catch(() => ({}));
+    console.error('[GitHub DB] 寫入失敗詳情:', errJson);
+    throw new Error(`GitHub API 錯誤 (${putRes.status}): ${JSON.stringify(errJson)}`);
+  }
+
+  const result = await putRes.json();
+  const newSha = result.content?.sha || result.commit?.sha;
+
+  // 更新快取
+  latestCachedSha = newSha;
+  latestCachedUsers = cleanUsers;
+  lastFetchTime = Date.now();
+  writeUsersToLocalDisk(cleanUsers);
+
+  return result;
+}
+
+/**
  * 提交更新會員資料至 GitHub 倉庫 (PUT Contents API)
  * 具備 409 SHA 版本衝突自動抓取最新 SHA 重試機制
  */
@@ -250,10 +388,11 @@ export async function commitUsersToGithub(
     };
   }
 
+  const cleanPath = (config.filePath || FILE_PATH).replace(/^\/+/, '');
+  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${cleanPath}`;
   const message = commitMessage || `chore(users): 自動同步更新會員資料庫 (${cleanUsers.length} 位會員) [skip ci]`;
   const serialized = JSON.stringify(cleanUsers, null, 2);
   const base64Content = Buffer.from(serialized, 'utf-8').toString('base64');
-  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.filePath}`;
 
   let currentRetry = 0;
 
@@ -268,6 +407,7 @@ export async function commitUsersToGithub(
     }
 
     try {
+      console.log(`[GitHub DB] 正在寫入更新至 GitHub (${currentRetry}/${maxRetries}): ${url}`);
       const payload: any = {
         message,
         content: base64Content,
@@ -279,12 +419,7 @@ export async function commitUsersToGithub(
 
       const res = await fetch(url, {
         method: 'PUT',
-        headers: {
-          Accept: 'application/vnd.github.v3+json',
-          'Content-Type': 'application/json',
-          'User-Agent': 'Omni-Astrology-App',
-          Authorization: `Bearer ${config.token}`,
-        },
+        headers: getHeaders(),
         body: JSON.stringify(payload),
       });
 

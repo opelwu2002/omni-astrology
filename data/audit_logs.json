@@ -1,5 +1,55 @@
 [
   {
+    "id": "audit-1789645583437-tm6h2",
+    "timestamp": 1789645583437,
+    "adminId": "admin-master-001",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "user_update",
+    "targetId": "kc7470@gmail.com",
+    "targetType": "user",
+    "details": "更新會員 kc7470@gmail.com 資料：解鎖權限調整為 [tier_199, tier_399, tier_699]"
+  },
+  {
+    "id": "audit-1789645583429-ikko4",
+    "timestamp": 1789645583429,
+    "adminId": "admin-master-001",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "user_update",
+    "targetId": "kc7470@gmail.com",
+    "targetType": "user",
+    "details": "更新會員 kc7470@gmail.com 資料：解鎖權限調整為 []"
+  },
+  {
+    "id": "audit-1789645583422-cxkdg",
+    "timestamp": 1789645583422,
+    "adminId": "admin-master-001",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "user_update",
+    "targetId": "kc7470@gmail.com",
+    "targetType": "user",
+    "details": "更新會員 kc7470@gmail.com 資料：解鎖權限調整為 [tier_399]"
+  },
+  {
+    "id": "audit-1789645583412-vsw4k",
+    "timestamp": 1789645583412,
+    "adminId": "admin-master-001",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "user_update",
+    "targetId": "kc7470@gmail.com",
+    "targetType": "user",
+    "details": "更新會員 kc7470@gmail.com 資料：解鎖權限調整為 [tier_199, tier_399, tier_699]"
+  },
+  {
+    "id": "audit-1789645583402-4b6vz",
+    "timestamp": 1789645583403,
+    "adminId": "admin-master-001",
+    "adminEmail": "opelwu2002@gmail.com",
+    "action": "user_update",
+    "targetId": "kc7470@gmail.com",
+    "targetType": "user",
+    "details": "更新會員 kc7470@gmail.com 資料：企業機構設為「中央研究院」、統一編號設為「03811209」、行業分類設為「學校或研究單位」、電話設為「0932122156」、地址設為「台北市南港區研究院路二段128號」、解鎖權限調整為 [tier_399, tier_699]"
+  },
+  {
     "id": "audit-1789643944700-9pk8s",
     "timestamp": 1789643944700,
     "adminId": "admin-master-001",

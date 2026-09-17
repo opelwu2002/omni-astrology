@@ -6,6 +6,11 @@
 import assert from 'assert';
 import {
   getGitHubDbConfig,
+  getRepoInfo,
+  getHeaders,
+  FILE_PATH,
+  BRANCH,
+  saveUsersToGitHub,
   isGitHubDbConfigured,
   filterOutGhostUsers,
   fetchUsersFromGithub,
@@ -39,13 +44,36 @@ async function runTests() {
     }
   }
 
-  // 【測試 1：GitHub DB 配置解析】
-  console.log('【測試 1：檢驗 GitHub 資料庫設定與環境變數解析】');
+  // 【測試 1：GitHub DB 配置與各類極端環境變數解析（杜絕 404）】
+  console.log('【測試 1：檢驗 GitHub 資料庫設定與環境變數解析（杜絕 404 錯誤）】');
   const config = getGitHubDbConfig();
   testAssert(config.owner === 'opelwu2002', `預設 Owner 必須為 opelwu2002 (目前: ${config.owner})`);
   testAssert(config.repo === 'omni-astrology', `預設 Repo 必須為 omni-astrology (目前: ${config.repo})`);
   testAssert(config.branch === 'main', `預設 Branch 必須為 main (目前: ${config.branch})`);
   testAssert(config.filePath === 'data/users.json', `預設儲存路徑為 data/users.json (目前: ${config.filePath})`);
+  testAssert(!config.filePath.startsWith('/'), `儲存路徑絕不可帶有前導斜線 (目前: ${config.filePath})`);
+
+  // 1.1 測試 GITHUB_REPO 為 "opelwu2002/omni-astrology" 時的解析
+  process.env.GITHUB_REPO = 'opelwu2002/omni-astrology';
+  delete process.env.GITHUB_OWNER;
+  const r1 = getRepoInfo();
+  testAssert(r1.owner === 'opelwu2002' && r1.repo === 'omni-astrology', `完整 owner/repo 格式解析成功: ${r1.owner}/${r1.repo}`);
+  const url1 = `https://api.github.com/repos/${r1.owner}/${r1.repo}/contents/${FILE_PATH}`;
+  testAssert(!url1.includes('opelwu2002/opelwu2002'), `URL 絕無重複 owner: ${url1}`);
+
+  // 1.2 測試 GITHUB_REPO 包含 https:// 前綴與結尾斜線
+  process.env.GITHUB_REPO = 'https://github.com/opelwu2002/omni-astrology/';
+  const r2 = getRepoInfo();
+  testAssert(r2.owner === 'opelwu2002' && r2.repo === 'omni-astrology', `URL 網址格式解析成功: ${r2.owner}/${r2.repo}`);
+
+  // 1.3 測試 User-Agent 與 Headers 標頭
+  process.env.GITHUB_TOKEN = 'ghp_mockTokenTest123';
+  const headers = getHeaders();
+  testAssert(headers['User-Agent'] === 'Omni-Astrology-App', '標頭必須包含 User-Agent: Omni-Astrology-App');
+  testAssert(headers['Accept'] === 'application/vnd.github.v3+json', '標頭必須包含 Accept: application/vnd.github.v3+json');
+  testAssert(headers['Authorization'] === 'Bearer ghp_mockTokenTest123', '標頭必須包含 Bearer Token');
+  testAssert(typeof saveUsersToGitHub === 'function', '必須導出 saveUsersToGitHub 函式');
+  delete process.env.GITHUB_TOKEN; // 測試完清空避免干擾後續降級測試
 
   // 【測試 2：幽靈資料過濾防線】
   console.log('\n【測試 2：檢驗幽靈會員嚴密過濾機制（不誤殺真實用戶）】');

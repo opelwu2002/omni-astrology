@@ -35,6 +35,10 @@ async function runVerification() {
 
   // 【測試 2：檢驗黃光隆 (kc7470@gmail.com) 初始狀態絕無 199 權限】
   console.log('\n▶ 測試 2：檢驗初始狀態絕無 199 權限（杜絕沒加給卻預先給 199）...');
+  await updateUser('kc7470@gmail.com', {
+    unlockedTiers: ['free'],
+    unlocked_tiers: ['free'],
+  });
   const huangUser = await findUserByEmail('kc7470@gmail.com');
   assert(huangUser, '系統必須存在黃光隆 (kc7470@gmail.com) 會員');
   assert.equal(huangUser.company, '中央研究院', '企業機構必須為「中央研究院」');
