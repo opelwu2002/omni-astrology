@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Edit3, Eye, EyeOff, RefreshCw, Building2, Phone, MapPin } from 'lucide-react';
+import { TIER_KEYS, normalizeTiers } from '@/lib/constants/tiers';
 
 export interface EditUserForm {
   email: string;
@@ -14,7 +15,7 @@ export interface EditUserForm {
   role: string;
   status: string;
   password?: string;
-  unlocked_tiers: string[]; // 必須為字串陣列，例如 ['free', 'tier_199', 'tier_399', 'tier_699']
+  unlocked_tiers: string[]; // 例如 ['free', 'tier_199', 'tier_399', 'tier_699']
 }
 
 interface UserEditModalProps {
@@ -25,13 +26,6 @@ interface UserEditModalProps {
   onSaved: () => void;
   showFeedback?: (type: 'success' | 'error', message: string) => void;
 }
-
-// 方案 key 映射常數（同時支援 tier_199, 199, level2 等別名）
-const TIER_GROUPS = {
-  tier199: ['tier_199', '199', 'level2'],
-  tier399: ['tier_399', '399', 'synastry_addon'],
-  tier699: ['tier_699', '699', 'level3'],
-};
 
 export default function UserEditModal({
   isOpen,
@@ -58,11 +52,18 @@ export default function UserEditModal({
   const [showPassword, setShowPassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // 彈窗開啟時初始化：帶入當前會員的所有原有欄位與權限
+  // 彈窗開啟時初始化：取得目標使用者的權限陣列，透過雙向判斷確認是否已勾選
   useEffect(() => {
     if (user) {
-      const rawTiers = user.unlocked_tiers || user.unlockedTiers || [];
-      const safeTiers = Array.isArray(rawTiers) ? [...rawTiers] : [];
+      const rawTiers: string[] = user.unlocked_tiers || user.unlockedTiers || [];
+      const has199 = rawTiers.includes('tier_199') || rawTiers.includes('199') || rawTiers.includes('level2');
+      const has399 = rawTiers.includes('tier_399') || rawTiers.includes('399') || rawTiers.includes('synastry_addon');
+      const has699 = rawTiers.includes('tier_699') || rawTiers.includes('699') || rawTiers.includes('level3');
+
+      const initialTiers: string[] = ['free'];
+      if (has199) initialTiers.push('tier_199');
+      if (has399) initialTiers.push('tier_399');
+      if (has699) initialTiers.push('tier_699');
 
       setFormData({
         email: user.email || '',
@@ -75,7 +76,7 @@ export default function UserEditModal({
         role: user.role || 'user',
         status: user.status || 'active',
         password: '',
-        unlocked_tiers: safeTiers,
+        unlocked_tiers: initialTiers,
       });
       setShowPassword(false);
     }
@@ -83,35 +84,14 @@ export default function UserEditModal({
 
   if (!isOpen || !user) return null;
 
-  // 判斷某階層方案是否已被選取 (支援別名)
-  const isTierSelected = (group: string[]) => {
-    return group.some((key) => formData.unlocked_tiers.includes(key));
-  };
-
   // 權限 Checkbox 獨立 Toggle 函式（杜絕 199 寫死或無法增刪）
-  const handleTierToggle = (tierGroupKeys: string[], primaryKey: string) => {
+  const handleTierToggle = (tierKey: string) => {
     setFormData((prev) => {
-      const isSelected = tierGroupKeys.some((k) => prev.unlocked_tiers.includes(k));
-      let updatedTiers: string[];
-
-      if (isSelected) {
-        // 取消勾選：徹底過濾掉該方案的所有別名 (包含 199, tier_199, level2)
-        updatedTiers = prev.unlocked_tiers.filter((t) => !tierGroupKeys.includes(t));
-      } else {
-        // 勾選：加入主鍵與所有相容別名，確保全站讀取 100% 吻合
-        const remaining = prev.unlocked_tiers.filter((t) => !tierGroupKeys.includes(t));
-        updatedTiers = [...remaining, ...tierGroupKeys];
-      }
-
-      // 確保保留基礎 free
-      if (!updatedTiers.includes('free')) {
-        updatedTiers.unshift('free');
-      }
-
-      return {
-        ...prev,
-        unlocked_tiers: Array.from(new Set(updatedTiers)),
-      };
+      const exists = prev.unlocked_tiers.includes(tierKey);
+      const updatedTiers = exists
+        ? prev.unlocked_tiers.filter((t) => t !== tierKey)
+        : [...prev.unlocked_tiers, tierKey];
+      return { ...prev, unlocked_tiers: updatedTiers };
     });
   };
 
@@ -126,6 +106,9 @@ export default function UserEditModal({
       '';
 
     try {
+      // 容錯正規化後發送
+      const finalTiers = normalizeTiers(formData.unlocked_tiers);
+
       const payload: any = {
         email: formData.email,
         targetUserId: user.id || formData.email,
@@ -139,8 +122,8 @@ export default function UserEditModal({
         address: formData.address.trim(),
         role: formData.role,
         status: formData.status,
-        unlocked_tiers: formData.unlocked_tiers,
-        unlockedTiers: formData.unlocked_tiers, // 雙命名相容
+        unlocked_tiers: finalTiers,
+        unlockedTiers: finalTiers,
       };
 
       if (formData.password && formData.password.trim().length >= 6) {
@@ -308,11 +291,7 @@ export default function UserEditModal({
               <option value="學校或研究單位">學校或研究單位</option>
               <option value="製造業">製造業</option>
               <option value="服務業">服務業</option>
-              <option value="批發與零售業">批發與零售業</option>
-              <option value="資訊與通訊科技業">資訊與通訊科技業</option>
               <option value="金融與專業諮詢">金融與專業諮詢</option>
-              <option value="醫療保健與社會工作">醫療保健與社會工作</option>
-              <option value="藝術與文創產業">藝術與文創產業</option>
               <option value="其他">其他</option>
             </select>
           </div>
@@ -347,7 +326,7 @@ export default function UserEditModal({
             </div>
           </div>
 
-          {/* 解鎖權限等級調整 (Checkboxes) */}
+          {/* 解鎖權限方案調整 */}
           <div className="pt-2 border-t border-slate-800">
             <label className="text-xs text-slate-300 mb-2 block font-medium">
               解鎖權限方案調整 (可多選或完全清空)
@@ -356,15 +335,15 @@ export default function UserEditModal({
               {/* 初階解析 199 */}
               <label
                 className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition ${
-                  isTierSelected(TIER_GROUPS.tier199)
+                  formData.unlocked_tiers.includes('tier_199') || formData.unlocked_tiers.includes('199')
                     ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
                     : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                 }`}
               >
                 <input
                   type="checkbox"
-                  checked={isTierSelected(TIER_GROUPS.tier199)}
-                  onChange={() => handleTierToggle(TIER_GROUPS.tier199, 'tier_199')}
+                  checked={formData.unlocked_tiers.includes('tier_199') || formData.unlocked_tiers.includes('199')}
+                  onChange={() => handleTierToggle('tier_199')}
                   className="rounded border-slate-700 text-amber-500 focus:ring-0"
                 />
                 <span className="font-medium">初階解析 (199)</span>
@@ -373,15 +352,15 @@ export default function UserEditModal({
               {/* 雙人合盤 399 */}
               <label
                 className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition ${
-                  isTierSelected(TIER_GROUPS.tier399)
+                  formData.unlocked_tiers.includes('tier_399') || formData.unlocked_tiers.includes('399')
                     ? 'bg-purple-500/15 border-purple-500/50 text-purple-300'
                     : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                 }`}
               >
                 <input
                   type="checkbox"
-                  checked={isTierSelected(TIER_GROUPS.tier399)}
-                  onChange={() => handleTierToggle(TIER_GROUPS.tier399, 'tier_399')}
+                  checked={formData.unlocked_tiers.includes('tier_399') || formData.unlocked_tiers.includes('399')}
+                  onChange={() => handleTierToggle('tier_399')}
                   className="rounded border-slate-700 text-purple-500 focus:ring-0"
                 />
                 <span className="font-medium">雙人合盤 (399)</span>
@@ -390,15 +369,15 @@ export default function UserEditModal({
               {/* 高階終身 699 */}
               <label
                 className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition ${
-                  isTierSelected(TIER_GROUPS.tier699)
+                  formData.unlocked_tiers.includes('tier_699') || formData.unlocked_tiers.includes('699')
                     ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300'
                     : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                 }`}
               >
                 <input
                   type="checkbox"
-                  checked={isTierSelected(TIER_GROUPS.tier699)}
-                  onChange={() => handleTierToggle(TIER_GROUPS.tier699, 'tier_699')}
+                  checked={formData.unlocked_tiers.includes('tier_699') || formData.unlocked_tiers.includes('699')}
+                  onChange={() => handleTierToggle('tier_699')}
                   className="rounded border-slate-700 text-emerald-500 focus:ring-0"
                 />
                 <span className="font-medium">高階終身 (699)</span>

@@ -7,6 +7,10 @@ import {
   updateUser,
   deleteUser,
 } from '@/lib/usersStorage';
+import { normalizeTiers } from '@/lib/constants/tiers';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 // 取得所有會員清單 (100% 直通全站單一資料存取核心 lib/usersStorage.ts)
 export async function GET(request: Request) {
@@ -43,6 +47,7 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const rawUnlockedTiers = body.unlockedTiers ?? body.unlocked_tiers;
+    const normalizedTiers = Array.isArray(rawUnlockedTiers) ? normalizeTiers(rawUnlockedTiers) : ['free'];
     const rawTaxId = body.taxId ?? body.tax_id;
     const {
       email,
@@ -78,7 +83,7 @@ export async function POST(request: Request) {
       name: name?.trim() || cleanEmail.split('@')[0],
       role: role || 'user',
       status: status || 'active',
-      unlockedTiers: Array.isArray(rawUnlockedTiers) ? rawUnlockedTiers : ['free'],
+      unlockedTiers: normalizedTiers,
       phone: phone?.trim() || undefined,
       company: company?.trim() || undefined,
       taxId: rawTaxId ? String(rawTaxId).trim() : undefined,
@@ -123,6 +128,7 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const targetUserId = body.targetUserId || body.id || body.userId || body.email;
     const rawUnlockedTiers = body.unlockedTiers ?? body.unlocked_tiers;
+    const normalizedTiers = rawUnlockedTiers !== undefined ? normalizeTiers(rawUnlockedTiers) : undefined;
     const rawTaxId = body.taxId ?? body.tax_id;
     const {
       name,
@@ -147,8 +153,8 @@ export async function PATCH(request: Request) {
       role,
       status,
       password,
-      unlockedTiers: rawUnlockedTiers,
-      unlocked_tiers: rawUnlockedTiers,
+      unlockedTiers: normalizedTiers,
+      unlocked_tiers: normalizedTiers,
       phone,
       company,
       taxId: rawTaxId,

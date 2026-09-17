@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/auth';
 import { addAuditLog } from '@/lib/db';
 import { updateUser } from '@/lib/usersStorage';
+import { normalizeTiers } from '@/lib/constants/tiers';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 // 處理會員資料更新 (PUT /api/admin/users/update)
 export async function PUT(request: Request) {
@@ -17,6 +21,7 @@ export async function PUT(request: Request) {
     const body = await request.json();
     const targetUserId = body.targetUserId || body.id || body.userId || body.email;
     const rawUnlockedTiers = body.unlockedTiers ?? body.unlocked_tiers;
+    const normalizedTiers = rawUnlockedTiers !== undefined ? normalizeTiers(rawUnlockedTiers) : undefined;
     const rawTaxId = body.taxId ?? body.tax_id;
     const {
       name,
@@ -41,8 +46,8 @@ export async function PUT(request: Request) {
       role,
       status,
       password,
-      unlockedTiers: rawUnlockedTiers,
-      unlocked_tiers: rawUnlockedTiers,
+      unlockedTiers: normalizedTiers,
+      unlocked_tiers: normalizedTiers,
       phone,
       company,
       taxId: rawTaxId,
