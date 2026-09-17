@@ -1,27 +1,5 @@
 [
   {
-    "id": "ord-1789566260849-MGCR",
-    "orderNumber": "ORD20260916MGCR",
-    "userId": "user-1789565978547-v7nxp",
-    "userEmail": "peirung1121@gmail.com",
-    "tier": "level2",
-    "tierName": "初階人生痛點解鎖報告（事業財富・情感健康）",
-    "amount": 199,
-    "paymentMethod": "ecpay",
-    "status": "pending",
-    "createdAt": 1789566260849,
-    "invoice": {
-      "type": "individual",
-      "buyerTitle": "",
-      "taxId": "",
-      "recipientName": "吳沛融",
-      "recipientPhone": "0911027688",
-      "postalCode": "100",
-      "address": "台北市松山區敦化北路165巷16號3樓",
-      "status": "pending"
-    }
-  },
-  {
     "id": "ord-1789565863674-WRKF",
     "orderNumber": "ORD20260916WRKF",
     "userId": "test-pending-user",
