@@ -406,36 +406,6 @@ export default function AuthModal() {
           </form>
         )}
 
-        {/* 測試帳號快速填入 */}
-        <div className="mt-4 pt-3 border-t border-slate-800 text-center">
-          <span className="text-[11px] text-slate-400 block mb-1.5">
-            官方測試帳號快速帶入：
-          </span>
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setLoginEmail('vip@omni-astrology.com');
-                setLoginPassword('user123456');
-                setMode('login');
-              }}
-              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-md border border-slate-700 transition cursor-pointer"
-            >
-              VIP 會員 (vip@omni-astrology.com)
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setLoginEmail('opelwu2002@gmail.com');
-                setLoginPassword('Opel6439');
-                setMode('login');
-              }}
-              className="px-2.5 py-1 bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 text-xs rounded-md border border-purple-700/50 transition cursor-pointer"
-            >
-              最高管理員 (opelwu2002@gmail.com / Opel6439)
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );
