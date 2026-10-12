@@ -65,5 +65,24 @@
     "createdAt": 1789643036363,
     "lastLoginAt": 1789643036363,
     "provider": "credentials"
+  },
+  {
+    "id": "user-1791819853464-bgjwh",
+    "email": "nokiahtc3350@gmail.com",
+    "passwordHash": "$2b$10$jsC0X9C8mbgvJSr3xdVf.OPaJ2VFxlkzZC8IMmqPzvo6PaJd.VsKC",
+    "name": "徐不對",
+    "role": "user",
+    "status": "active",
+    "phone": "0958012214",
+    "company": "國立桃園高中",
+    "taxId": "00000000",
+    "industry": "學校或研究單位",
+    "address": "桃園市桃園區成功路三段38號",
+    "unlockedTiers": [
+      "free"
+    ],
+    "createdAt": 1791819853465,
+    "lastLoginAt": 1791819853465,
+    "provider": "credentials"
   }
 ]
