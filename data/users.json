@@ -80,6 +80,12 @@
     "address": "桃園市桃園區成功路三段38號",
     "unlockedTiers": [
       "free",
+      "level2",
+      "tier_199",
+      "199",
+      "synastry_addon",
+      "tier_399",
+      "399",
       "level3",
       "tier_699",
       "699"
