@@ -79,7 +79,10 @@
     "industry": "學校或研究單位",
     "address": "桃園市桃園區成功路三段38號",
     "unlockedTiers": [
-      "free"
+      "free",
+      "level3",
+      "tier_699",
+      "699"
     ],
     "createdAt": 1791819853465,
     "lastLoginAt": 1791819853465,
