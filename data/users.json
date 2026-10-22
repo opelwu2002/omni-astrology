@@ -93,5 +93,22 @@
     "createdAt": 1791819853465,
     "lastLoginAt": 1791819853465,
     "provider": "credentials"
+  },
+  {
+    "id": "user-1792695586363-xxmy6",
+    "email": "b0987532965@gmail.com",
+    "passwordHash": "$2b$10$EmOqNALLBQd0ht7Hiogz9ORHbGNhyXiF0AZirmiyDCz0kvb1mfQpm",
+    "name": "陳雅婷/化妝師",
+    "role": "user",
+    "status": "active",
+    "phone": "0987532965",
+    "industry": "其他",
+    "address": "桃園市桃園區民富九街49號3樓",
+    "unlockedTiers": [
+      "free"
+    ],
+    "createdAt": 1792695586363,
+    "lastLoginAt": 1792695586363,
+    "provider": "credentials"
   }
 ]
