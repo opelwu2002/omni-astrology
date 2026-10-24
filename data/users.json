@@ -102,10 +102,21 @@
     "role": "user",
     "status": "active",
     "phone": "0987532965",
+    "company": "",
+    "taxId": "",
     "industry": "其他",
     "address": "桃園市桃園區民富九街49號3樓",
     "unlockedTiers": [
-      "free"
+      "free",
+      "level2",
+      "tier_199",
+      "199",
+      "synastry_addon",
+      "tier_399",
+      "399",
+      "level3",
+      "tier_699",
+      "699"
     ],
     "createdAt": 1792695586363,
     "lastLoginAt": 1792695586363,
