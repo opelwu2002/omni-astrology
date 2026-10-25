@@ -121,5 +121,28 @@
     "createdAt": 1792695586363,
     "lastLoginAt": 1792695586363,
     "provider": "credentials"
+  },
+  {
+    "id": "user-1792909389301-elrkc",
+    "email": "test@gmail.com",
+    "passwordHash": "$2b$10$sAMRRm5oVK24HgkyldmIE.TMSX2SnWaZoPzSn6xErLGd2HdSyUKaO",
+    "name": "測試",
+    "role": "user",
+    "status": "active",
+    "unlockedTiers": [
+      "free",
+      "tier_199",
+      "level2",
+      "199",
+      "tier_399",
+      "synastry_addon",
+      "399",
+      "tier_699",
+      "level3",
+      "699"
+    ],
+    "createdAt": 1792909389301,
+    "lastLoginAt": 1792909389301,
+    "provider": "credentials"
   }
 ]
